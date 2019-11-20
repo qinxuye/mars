@@ -25,7 +25,7 @@ from .utils import tokenize, AttributeDict, on_serialize_shape, \
     on_deserialize_shape, on_serialize_nsplits, enter_build_mode, build_mode
 from .serialize import HasKey, ValueType, ProviderType, Serializable, AttributeAsDict, \
     TupleField, ListField, DictField, KeyField, BoolField, StringField, OneOfField
-from .tiles import Tileable
+from .tiles import Tileable, handler
 
 
 class Base(HasKey):
@@ -146,6 +146,12 @@ class Entity(object):
 
     def copy_from(self, obj):
         self.data = obj.data
+
+    def tiles(self):
+        return handler.tiles(self)
+
+    def single_tiles(self):
+        return handler.single_tiles(self)
 
     def __getattr__(self, attr):
         return getattr(self._data, attr)
