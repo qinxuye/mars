@@ -515,8 +515,8 @@ def build_fetch_chunk(chunk, input_chunk_keys=None, **kwargs):
     return op.new_chunk(None, kws=[params], _key=chunk.key, _id=chunk.id, **kwargs)
 
 
-def build_fetch_tileable(tileable, coarse=False):
-    if coarse or tileable.is_coarse():
+def build_fetch_tileable(tileable):
+    if tileable.is_coarse():
         chunks = None
     else:
         chunks = []
@@ -532,12 +532,12 @@ def build_fetch_tileable(tileable, coarse=False):
                                 _key=tileable.key, _id=tileable.id, **params)[0]
 
 
-def build_fetch(entity, coarse=False):
+def build_fetch(entity):
     from .core import Chunk, ChunkData
     if isinstance(entity, (Chunk, ChunkData)):
         return build_fetch_chunk(entity)
     elif hasattr(entity, 'tiles'):
-        return build_fetch_tileable(entity, coarse=coarse)
+        return build_fetch_tileable(entity)
     else:
         raise TypeError('Type %s not supported' % type(entity).__name__)
 
