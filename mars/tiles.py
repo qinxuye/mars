@@ -14,14 +14,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 from collections import deque
 
-from .graph import DirectedGraph, DAG
-from .utils import kernel_mode
+from .graph import DAG
+from .utils import kernel_mode, build_mode
 
 
 class Tileable(object):
     __slots__ = ()
+
+    @property
+    def inputs(self):
+        raise NotImplementedError
+
+    @property
+    def chunks(self):
+        raise NotImplementedError
+
+    @property
+    def op(self):
+        raise NotImplementedError
 
     def is_coarse(self):
         raise NotImplementedError
@@ -29,42 +42,93 @@ class Tileable(object):
     def copy_from(self, other):
         raise NotImplementedError
 
-    def to_graph(self, graph=None, graph_cls=DirectedGraph, substitutes=None):
+    def tiles(self):
+        return handler.tiles(self)
+
+    def single_tiles(self):
+        return handler.single_tiles(self)
+
+    @kernel_mode
+    def build_graph(self, graph=None, cls=DAG, tiled=False, compose=True, executed_keys=None):
+        from .utils import build_fetch
+
+        executed_keys = set(executed_keys or [])
+        if tiled and self.is_coarse():
+            self.tiles()
+
+        graph = graph if graph is not None else cls()
+        keys = None
+
+        if tiled:
+            nodes = list(c.data for c in self.chunks)
+            keys = list(c.key for c in self.chunks)
+        else:
+            nodes = list(self.op.outputs)
+
+        node_to_fetch = dict()
+
+        def _generate_fetch_node(n):
+            if n in node_to_fetch:
+                return node_to_fetch[n]
+            fn = build_fetch(n, coarse=True).data
+            node_to_fetch[n] = fn
+            return fn
+
         visited = set()
-        graph = graph_cls() if graph is None else graph
-        substitutes = substitutes or dict()
+        while len(nodes) > 0:
+            node = nodes.pop()
 
-        if self in substitutes:
-            graph.add_node(substitutes[self])
-            return graph
+            # replace executed tensor/chunk by tensor/chunk with fetch op
+            if node.key in executed_keys:
+                node = _generate_fetch_node(node)
 
-        q = [self]
-        while len(q) > 0:
-            obj = q.pop()
-            if obj in visited:
-                continue
+            visited.add(node)
+            if not graph.contains(node):
+                graph.add_node(node)
+            children = node.inputs or []
+            for c in children:
+                if c.key in executed_keys:
+                    visited.add(c)
+                    c = _generate_fetch_node(c)
+                if not graph.contains(c):
+                    graph.add_node(c)
+                if not graph.has_successor(c, node):
+                    graph.add_edge(c, node)
+            nodes.extend([c for c in itertools.chain(*[inp.op.outputs for inp in node.inputs or []])
+                          if c not in visited])
+        if tiled and compose:
+            graph.compose(keys=keys)
 
-            if obj not in graph:
-                graph.add_node(obj)
-            for input_obj in obj.inputs or []:
-                sub = False
-                if input_obj in substitutes:
-                    input_obj = substitutes[input_obj]
-                    sub = True
-                in_graph = True
-                if input_obj not in graph:
-                    graph.add_node(input_obj)
-                    in_graph = False
-                graph.add_edge(input_obj, obj)
-                if not sub and not in_graph:
-                    q.append(input_obj)
-
-            visited.add(obj)
+        if not tiled and any(not n.is_coarse() for n in graph):
+            return self._to_coarse_graph(graph)
 
         return graph
 
-    def _repr_svg_(self):
-        return self.to_graph()._repr_svg_()
+    @staticmethod
+    def _to_coarse_graph(graph):
+        new_graph = type(graph)()
+        visited = dict()
+        for n in graph:
+            if n not in visited:
+                new_node = n.to_coarse()
+                visited[n] = new_node
+                new_graph.add_node(new_node)
+            for succ in graph.successors(n):
+                if succ not in visited:
+                    new_node = succ.to_coarse()
+                    visited[succ] = new_node
+                    new_graph.add_node(new_node)
+                new_graph.add_edge(visited[n], visited[succ])
+        return new_graph
+
+    def visualize(self, graph_attrs=None, node_attrs=None, **kw):
+        from graphviz import Source
+
+        g = self.build_graph(**kw)
+        dot = g.to_dot(graph_attrs=graph_attrs, node_attrs=node_attrs,
+                       result_chunk_keys={c.key for c in self.chunks})
+
+        return Source(dot)
 
 
 class TilesError(Exception):
@@ -165,3 +229,11 @@ handler = OperandTilesHandler()
 
 def register(op, func):
     handler.register(op, func)
+
+
+class ContinuousTilesManager(object):
+    def __init__(self, tileables):
+        self._tileables = tileables
+        with build_mode():
+            self._tileables_set = set(self._tileables)
+        self._done = False
