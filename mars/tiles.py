@@ -70,7 +70,7 @@ class Tileable(object):
         def _generate_fetch_node(n):
             if n in node_to_fetch:
                 return node_to_fetch[n]
-            fn = build_fetch(n, coarse=True).data
+            fn = build_fetch(n).data
             node_to_fetch[n] = fn
             return fn
 
@@ -229,11 +229,3 @@ handler = OperandTilesHandler()
 
 def register(op, func):
     handler.register(op, func)
-
-
-class ContinuousTilesManager(object):
-    def __init__(self, tileables):
-        self._tileables = tileables
-        with build_mode():
-            self._tileables_set = set(self._tileables)
-        self._done = False

@@ -25,8 +25,7 @@ from .utils import tokenize, AttributeDict, on_serialize_shape, \
     on_deserialize_shape, on_serialize_nsplits, enter_build_mode, build_mode
 from .serialize import HasKey, ValueType, ProviderType, Serializable, AttributeAsDict, \
     TupleField, ListField, DictField, KeyField, BoolField, StringField, OneOfField
-from .tiles import Tileable, handler
-from .graph import DAG
+from .tiles import Tileable
 
 
 class Base(HasKey):
