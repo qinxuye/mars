@@ -424,6 +424,8 @@ class TileableData(SerializableWithKey, Tileable):
         new_entity = self.copy()
         new_entity._obj_set('_id', self._id)
         new_entity._chunks = None
+        new_entity.op.outputs = [new_entity if o is self else o
+                                 for o in self.op.outputs]
         if self.inputs is None or len(self.inputs) == 0:
             new_entity.extra_params.update({'raw_chunk_size': self.nsplits})
         return new_entity

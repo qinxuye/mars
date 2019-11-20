@@ -23,7 +23,6 @@ import numpy as np
 
 from ..core import Entity, TileableEntity, ChunkData, Chunk, HasShapeTileableData, \
     build_mode, Serializable
-from ..tiles import handler
 from ..serialize import ProviderType, ValueType, DataTypeField, ListField, TupleField, \
     BoolField, StringField, AnyField
 from ..compat import Enum
@@ -269,12 +268,6 @@ class Tensor(TileableEntity):
 
     def __len__(self):
         return len(self._data)
-
-    def tiles(self):
-        return handler.tiles(self)
-
-    def single_tiles(self):
-        return handler.single_tiles(self)
 
     @property
     def shape(self):

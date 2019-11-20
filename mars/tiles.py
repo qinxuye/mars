@@ -25,15 +25,15 @@ class Tileable(object):
     __slots__ = ()
 
     @property
+    def op(self):
+        raise NotImplementedError
+
+    @property
     def inputs(self):
         raise NotImplementedError
 
     @property
     def chunks(self):
-        raise NotImplementedError
-
-    @property
-    def op(self):
         raise NotImplementedError
 
     def is_coarse(self):
@@ -144,14 +144,17 @@ class NotSupportTile(Exception):
 
 
 class OperandTilesHandler(object):
-    def __init__(self):
-        self._handlers = {}
+    _handlers = {}
 
     @classmethod
     def _get_op_cls(cls, op):
         if isinstance(op, type):
             return op
         return type(op)
+
+    @classmethod
+    def register(cls, op, tile_handler):
+        cls._handlers[cls._get_op_cls(op)] = tile_handler
 
     @classmethod
     def _assign_to(cls, tile_after_tensor_datas, tile_before_tensor_datas):
@@ -164,9 +167,6 @@ class OperandTilesHandler(object):
                 continue
             tile_after_tensor_data.copy_to(tile_before_tensor_data)
             tile_before_tensor_data.op.outputs = tile_before_tensor_datas
-
-    def register(self, op, handler):
-        self._handlers[self._get_op_cls(op)] = handler
 
     @kernel_mode
     def _dispatch(self, op):
@@ -225,7 +225,18 @@ class OperandTilesHandler(object):
 
 
 handler = OperandTilesHandler()
+register = OperandTilesHandler.register
 
 
-def register(op, func):
-    handler.register(op, func)
+# class GraphBuilder(object):
+#     def __init__(self, graph=None, graph_cls=DAG):
+#         if graph is not None:
+#             self._graph = graph
+#         else:
+#             self._graph = graph_cls()
+#
+#     def build_tileable_graph(self):
+#         pass
+#
+#     def build_chunk_graph(self):
+#         pass
