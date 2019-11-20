@@ -146,6 +146,10 @@ class NotSupportTile(Exception):
 class OperandTilesHandler(object):
     _handlers = {}
 
+    def __init__(self, on_tile_success=None, on_tile_error=None):
+        self._on_tile_success = on_tile_success
+        self._on_tile_error = on_tile_error
+
     @classmethod
     def _get_op_cls(cls, op):
         if isinstance(op, type):
@@ -228,15 +232,16 @@ handler = OperandTilesHandler()
 register = OperandTilesHandler.register
 
 
-# class GraphBuilder(object):
-#     def __init__(self, graph=None, graph_cls=DAG):
-#         if graph is not None:
-#             self._graph = graph
-#         else:
-#             self._graph = graph_cls()
-#
-#     def build_tileable_graph(self):
-#         pass
-#
-#     def build_chunk_graph(self):
-#         pass
+class GraphBuilder(object):
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None):
+        if graph is not None:
+            self._graph = graph
+        else:
+            self._graph = graph_cls()
+        self._node_processor = node_processor
+
+    def build_tileable_graph(self, *tileables, **options):
+        pass
+
+    def build_chunk_graph(self, *tileables, **options):
+        pass
