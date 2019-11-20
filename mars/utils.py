@@ -402,6 +402,51 @@ def kernel_mode(func):
     return _wrapped
 
 
+_build_mode = threading.local()
+
+
+class BuildMode(object):
+    def __init__(self):
+        self.is_build_mode = False
+        self._old_mode = None
+        self._enter_times = 0
+
+    def __enter__(self):
+        if self._enter_times == 0:
+            # check to prevent nested enter and exit
+            self._old_mode = self.is_build_mode
+            self.is_build_mode = True
+        self._enter_times += 1
+
+    def __exit__(self, *_):
+        self._enter_times -= 1
+        if self._enter_times == 0:
+            self.is_build_mode = self._old_mode
+            self._old_mode = None
+
+
+def build_mode():
+    ret = getattr(_build_mode, 'build_mode', None)
+    if ret is None:
+        ret = BuildMode()
+        _build_mode.build_mode = ret
+
+    return ret
+
+
+def enter_build_mode(func):
+    """
+    Decorator version of build_mode.
+
+    :param func: function
+    :return: the result of function
+    """
+    def inner(*args, **kwargs):
+        with build_mode():
+            return func(*args, **kwargs)
+    return inner
+
+
 def build_exc_info(exc_type, *args, **kwargs):
     try:
         raise exc_type(*args, **kwargs)
