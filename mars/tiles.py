@@ -18,7 +18,7 @@ import itertools
 from collections import deque
 
 from .graph import DAG
-from .utils import kernel_mode, build_mode
+from .utils import kernel_mode
 
 
 class Tileable(object):
