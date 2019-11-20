@@ -146,10 +146,6 @@ class NotSupportTile(Exception):
 class OperandTilesHandler(object):
     _handlers = {}
 
-    def __init__(self, on_tile_success=None, on_tile_error=None):
-        self._on_tile_success = on_tile_success
-        self._on_tile_error = on_tile_error
-
     @classmethod
     def _get_op_cls(cls, op):
         if isinstance(op, type):

@@ -427,14 +427,8 @@ class TileableData(SerializableWithKey, Tileable):
     def to_coarse(self):
         if self.is_coarse():
             return self
-        new_entity = self.copy()
-        new_entity._obj_set('_id', self._id)
-        new_entity._chunks = None
-        new_entity.op.outputs = [new_entity if o is self else o
-                                 for o in self.op.outputs]
-        if self.inputs is None or len(self.inputs) == 0:
-            new_entity.extra_params.update({'raw_chunk_size': self.nsplits})
-        return new_entity
+        self._chunks = None
+        return self
 
     def is_sparse(self):
         return self.op.is_sparse()
