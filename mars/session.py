@@ -18,6 +18,7 @@ import numpy as np
 
 from .core import Entity, Base
 from .context import LocalDictContext
+from .tiles import get_tiled
 try:
     from .resource import cpu_count, cuda_count
 except ImportError:  # pragma: no cover
@@ -92,8 +93,10 @@ class LocalSession(object):
 
     def _update_tileable_shape(self, tileable):
         new_nsplits = self._executor.get_tileable_nsplits(tileable)
-        tileable._update_shape(tuple(sum(nsplit) for nsplit in new_nsplits))
-        tileable.nsplits = new_nsplits
+        tiled = get_tiled(tileable)
+        for t in (tileable, tiled):
+            t._update_shape(tuple(sum(nsplit) for nsplit in new_nsplits))
+        tiled.nsplits = new_nsplits
 
     def fetch(self, *tileables, **kw):
         if self._executor is None:
