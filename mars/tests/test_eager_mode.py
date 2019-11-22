@@ -21,6 +21,7 @@ import pandas as pd
 
 import mars.tensor as mt
 import mars.dataframe as md
+from mars.tiles import get_tiled
 from mars.config import option_context
 from mars.dataframe.datasource.dataframe import from_pandas
 
@@ -128,7 +129,7 @@ class Test(unittest.TestCase):
 
             sess = Session.default_or_local()
             executor = sess._sess._executor
-            executor.chunk_result[arr1.chunks[0].key] = np.ones((4, 4)) * 2
+            executor.chunk_result[get_tiled(arr1).chunks[0].key] = np.ones((4, 4)) * 2
 
             arr2 = mt.ones((10, 5), chunk_size=4) - 1
             result = arr2.fetch()
