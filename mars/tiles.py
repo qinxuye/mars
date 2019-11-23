@@ -145,6 +145,10 @@ class DataNotReady(TilesError):
     pass
 
 
+class TilesFail(TilesError):
+    pass
+
+
 class NotSupportTile(Exception):
     pass
 

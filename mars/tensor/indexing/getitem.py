@@ -21,13 +21,14 @@ import numpy as np
 from ... import opcodes as OperandDef
 from ...serialize import ValueType, KeyField, ListField, TupleField, Int32Field
 from ...core import Base, Entity
+from ...tiles import TilesFail
+from ...utils import get_shuffle_input_keys_idxes, check_chunks_unknown_shape
 from ...compat import OrderedDict, Enum, reduce
 from ..core import TENSOR_TYPE, TensorOrder
 from ..utils import unify_chunks, slice_split, split_indexes_into_chunks, \
     calc_pos, broadcast_shape, calc_sliced_size, recursive_tile, filter_inputs
 from ..operands import TensorHasInput, TensorOperandMixin, \
     TensorShuffleMap, TensorShuffleReduce, TensorShuffleProxy
-from ...utils import get_shuffle_input_keys_idxes
 from ..array_utils import get_array_module
 from .core import process_index, calc_shape
 
@@ -199,6 +200,8 @@ class TensorIndexTilesHandler(object):
                 if first_fancy_index:
                     out_axis += 1
             elif isinstance(raw_index_obj, slice):
+                # check if inputs do not have chunks with unknown shape
+                check_chunks_unknown_shape([self._in_tensor], TilesFail)
                 reverse = (raw_index_obj.step or 0) < 0
                 idx_to_slices = sorted(slice_split(raw_index_obj, self._in_tensor.nsplits[in_axis]).items(),
                                        key=operator.itemgetter(0), reverse=reverse)
