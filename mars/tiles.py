@@ -20,6 +20,7 @@ import sys
 import weakref
 
 from .graph import DAG
+from .compat import six
 from .utils import kernel_mode, enter_build_mode
 
 
@@ -53,9 +54,15 @@ class Tileable(object):
     @kernel_mode
     def build_graph(self, graph=None, cls=DAG, tiled=False, compose=True,
                     **build_chunk_graph_kwargs):
-        graph_builder = GraphBuilder(graph=graph, graph_cls=cls)
-        return graph_builder.build([self], tiled=tiled, compose=compose,
-                                   **build_chunk_graph_kwargs)
+        tileable_graph = graph if not tiled else None
+        tileable_graph_builder = TileableGraphBuilder(graph=tileable_graph, graph_cls=cls)
+        tileable_graph = tileable_graph_builder.build([self])
+        if not tiled:
+            return tileable_graph
+        chunk_graph_builder = ChunkGraphBuilder(
+            graph=graph, graph_cls=cls, compose=compose,
+            **build_chunk_graph_kwargs)
+        return chunk_graph_builder.build([self], tileable_graph=tileable_graph)
         # from .utils import build_fetch
         #
         # executed_keys = set(executed_keys or [])
@@ -280,13 +287,29 @@ class GraphBuilder(object):
                     if n not in visited:
                         nodes.append(n)
 
+    def build(self, tileables):
+        raise NotImplementedError
+
+
+class TileableGraphBuilder(GraphBuilder):
     @enter_build_mode
-    def build_tileable_data_graph(self, tileables):
+    def build(self, tileables):
         visited = set()
         nodes = list(itertools.chain(
             *(tileable.op.outputs for tileable in tileables)))
         self._add_nodes(nodes, visited)
         return self._graph
+
+
+class ChunkGraphBuilder(GraphBuilder):
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None, compose=True,
+                 on_tile=None, on_tile_success=None, on_tile_failure=None):
+        super(ChunkGraphBuilder, self).__init__(graph=graph, graph_cls=graph_cls,
+                                                node_processor=node_processor)
+        self._compose = compose
+        self._on_tile = on_tile
+        self._on_tile_success = on_tile_success
+        self._on_tile_failure = on_tile_failure
 
     def _tile(self, tileable_data, on_tile):
         cache = _tileable_data_to_tiled
@@ -310,16 +333,19 @@ class GraphBuilder(object):
             cache[t] = td.data
         return tds
 
-    @enter_build_mode
-    def build_chunk_graph(self, tileables, compose=False, tileable_graph=None,
-                          on_tile=None, on_tile_success=None, on_tile_failure=None):
+    def _get_tileable_data_graph(self, tileables, tileable_graph):
         if tileable_graph is None:
             # if tileable_data graph not provided
             # create a new one via GraphBuilder
-            tileable_graph_builder = GraphBuilder(
+            tileable_graph_builder = TileableGraphBuilder(
                 graph_cls=type(self._graph),
                 node_processor=self._node_processor)
-            tileable_graph = tileable_graph_builder.build_tileable_data_graph(tileables)
+            tileable_graph = tileable_graph_builder.build(tileables)
+        return tileable_graph
+
+    @enter_build_mode
+    def build(self, tileables, tileable_graph=None):
+        tileable_graph = self._get_tileable_data_graph(tileables, tileable_graph)
 
         # do tiles and add nodes or edges to chunk graph
         tileables_set = set(tileables)
@@ -332,28 +358,61 @@ class GraphBuilder(object):
             if tileable_data.op in tiled_op:
                 continue
             try:
-                tiled = self._tile(tileable_data, on_tile)
+                tiled = self._tile(tileable_data, self._on_tile)
                 tiled_op.add(tileable_data.op)
                 for t, td in zip(tileable_data.op.outputs, tiled):
-                    if on_tile_success is not None:
-                        td = on_tile_success(t, td)
+                    if self._on_tile_success is not None:
+                        td = self._on_tile_success(t, td)
                     nodes.extend(c.data for c in td.chunks)
                     if t in tileables_set:
                         keys.extend(c.key for c in td.chunks)
                     self._add_nodes(nodes, visited)
             except:  # noqa: E722
                 exc_info = sys.exc_info()
-                if on_tile_failure:
-                    on_tile_failure(exc_info)
+                if self._on_tile_failure:
+                    self._on_tile_failure(tileable_data.op, exc_info)
                 else:
                     raise
-        if compose:
+        if self._compose:
             self._graph.compose(keys=keys)
         return self._graph
 
-    def build(self, tileables, tiled=False, compose=True, **build_chunk_graph_kwargs):
-        if not tiled:
-            return self.build_tileable_data_graph(tileables)
-        else:
-            return self.build_chunk_graph(tileables, compose=compose,
-                                          **build_chunk_graph_kwargs)
+
+class IterativeChunkGraphBuilder(ChunkGraphBuilder):
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None, compose=True,
+                 on_tile=None, on_tile_success=None, on_tile_failure=None):
+        self._failed_ops = []
+        self._iterative_graphs = []
+        self._done = False
+        super(IterativeChunkGraphBuilder, self).__init__(
+            graph=graph, graph_cls=graph_cls, node_processor=node_processor,
+            compose=compose, on_tile=on_tile, on_tile_success=on_tile_success,
+            on_tile_failure=self._wrap_on_tile_failure(on_tile_failure))
+
+    def _wrap_on_tile_failure(self, on_tile_failure):
+        def inner(op, exc_info):
+            if isinstance(exc_info[1], TilesFail):
+                self._failed_ops.append(op)
+            else:
+                if on_tile_failure is not None:
+                    on_tile_failure(op, exc_info)
+                else:
+                    six.reraise(*exc_info)
+        return inner
+
+    @property
+    def failed_ops(self):
+        return self._failed_ops
+
+    @property
+    def done(self):
+        return self._done
+
+    def build(self, tileables, tileable_graph=None):
+        self._failed_ops.clear()
+        chunk_graph = super(IterativeChunkGraphBuilder, self).build(
+            tileables, tileable_graph=tileable_graph)
+        self._iterative_graphs.append(chunk_graph)
+        if len(self._failed_ops) == 0:
+            self._done = True
+        return chunk_graph

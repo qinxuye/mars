@@ -27,7 +27,6 @@ try:
     from numpy.core._exceptions import UFuncTypeError
 except ImportError:  # pragma: no cover
     UFuncTypeError = None
-import pandas as pd
 
 try:
     import gevent
@@ -36,7 +35,7 @@ except ImportError:  # pragma: no cover
 
 from .operands import Fetch, ShuffleProxy
 from .graph import DirectedGraph
-from .tiles import GraphBuilder, get_tiled
+from .tiles import TileableGraphBuilder, ChunkGraphBuilder, get_tiled
 from .compat import six, futures, OrderedDict, enum
 from .utils import kernel_mode, build_fetch, calc_nsplits
 
@@ -631,11 +630,11 @@ class Executor(object):
 
         # shallow copy
         chunk_result = self._chunk_result.copy()
-        tileable_graph_builder = GraphBuilder()
-        tileable_graph = tileable_graph_builder.build_tileable_data_graph([tileable])
-        chunk_graph_builder = GraphBuilder(graph_cls=DirectedGraph)
-        chunk_graph = chunk_graph_builder.build_chunk_graph([tileable], tileable_graph=tileable_graph,
-                                                            compose=compose, on_tile_success=_on_tile_success)
+        tileable_graph_builder = TileableGraphBuilder()
+        tileable_graph = tileable_graph_builder.build([tileable])
+        chunk_graph_builder = ChunkGraphBuilder(graph_cls=DirectedGraph, compose=compose,
+                                                on_tile_success=_on_tile_success)
+        chunk_graph = chunk_graph_builder.build([tileable], tileable_graph=tileable_graph)
         ret = self.execute_graph(chunk_graph, result_keys, n_parallel=n_parallel or n_thread,
                                  print_progress=print_progress, mock=mock,
                                  chunk_result=chunk_result)
@@ -680,12 +679,12 @@ class Executor(object):
         def _generate_fetch_if_executed(n):
             # node processor that if the node is executed
             # replace it with a fetch node
-            if n.key not in executed_keys:
+            if n.key not in executed_keys:  # noqa: F821
                 return n
-            if n in node_to_fetch:
-                return node_to_fetch[n]
+            if n in node_to_fetch:  # noqa: F821
+                return node_to_fetch[n]  # noqa: F821
             fn = build_fetch(n).data
-            node_to_fetch[n] = fn
+            node_to_fetch[n] = fn  # noqa: F821
             return fn
 
         def _on_tile_success(before_tile_data, after_tile_data):
@@ -710,14 +709,13 @@ class Executor(object):
             return after_tile_data
 
         # build tileable graph
-        tileable_graph_builder = GraphBuilder()
-        tileable_graph = tileable_graph_builder.build_tileable_data_graph(tileables)
+        tileable_graph_builder = TileableGraphBuilder()
+        tileable_graph = tileable_graph_builder.build(tileables)
         # build chunk graph, tile will be done during building
-        chunk_graph_builder = GraphBuilder(graph_cls=DirectedGraph,
-                                           node_processor=_generate_fetch_if_executed)
-        chunk_graph = chunk_graph_builder.build_chunk_graph(
-            tileables, compose=compose, tileable_graph=tileable_graph,
-            on_tile_success=_on_tile_success)
+        chunk_graph_builder = ChunkGraphBuilder(
+            graph_cls=DirectedGraph, node_processor=_generate_fetch_if_executed,
+            compose=compose, on_tile_success=_on_tile_success)
+        chunk_graph = chunk_graph_builder.build(tileables, tileable_graph=tileable_graph)
         del executed_keys, node_to_fetch
 
         # execute chunk graph
