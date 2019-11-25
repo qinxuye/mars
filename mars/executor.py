@@ -759,9 +759,6 @@ class Executor(object):
                 tileable_graph = tileable_graph_builder.build(
                     itertools.chain(*(op.outputs for op in chunk_graph_builder.failed_ops)))
 
-        # remove variables that useless
-        del executed_keys, node_to_fetch
-
         for tileable in tileables:
             if tileable.key in self.stored_tileables:
                 self.stored_tileables[tileable.key][0].add(tileable.id)
