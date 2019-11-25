@@ -353,7 +353,7 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
     def __init__(self, graph=None, graph_cls=DAG, node_processor=None, compose=True,
                  on_tile=None, on_tile_success=None, on_tile_failure=None):
         self._failed_ops = set()
-        self._iterative_tileable_graphs = []
+        self._prev_tileable_graph = None
         self._iterative_chunk_graphs = []
         self._done = False
         super(IterativeChunkGraphBuilder, self).__init__(
@@ -381,7 +381,7 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
             # to current iterative tileable graph
             if on_tile_success is not None:
                 tile_after = on_tile_success(tile_before, tile_after)
-            iterative_tileable_graph = self._iterative_tileable_graphs[-1]
+            iterative_tileable_graph = self._prev_tileable_graph
             iterative_tileable_graph.add_node(tile_before)
             for inp in tile_before.inputs:
                 if inp in iterative_tileable_graph:
@@ -394,8 +394,8 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
         return self._failed_ops
 
     @property
-    def iterative_tileable_graphs(self):
-        return self._iterative_tileable_graphs
+    def prev_tileable_graph(self):
+        return self._prev_tileable_graph
 
     @property
     def iterative_chunk_graphs(self):
@@ -415,7 +415,7 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
         tileable_graph = self._get_tileable_data_graph(tileables, tileable_graph)
         self._graph = self._graph_cls()
         self._failed_ops.clear()
-        self._iterative_tileable_graphs.append(type(tileable_graph)())
+        self._prev_tileable_graph = type(tileable_graph)()
 
         chunk_graph = super(IterativeChunkGraphBuilder, self).build(
             tileables, tileable_graph=tileable_graph)

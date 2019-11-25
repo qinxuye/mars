@@ -673,13 +673,13 @@ class Executor(object):
                           print_progress=False, mock=False, compose=True):
         # shallow copy chunk_result, prevent from any chunk key decref
         chunk_result = self._chunk_result.copy()
-        tileable_datas = [t.data if hasattr(t, 'data') else t for t in tileables]
-        tileable_data_set = set(tileable_datas)
+        tileable_keys = [t.key for t in tileables]
+        tileable_keys_set = set(tileable_keys)
 
         result_keys = []
         to_release_keys = []
         concat_keys = []
-        tileable_data_to_chunk_keys = dict()
+        tileable_data_key_to_chunk_keys = dict()
 
         executed_keys = set(chunk_result)
         node_to_fetch = dict()
@@ -696,11 +696,11 @@ class Executor(object):
             return fn
 
         def _on_tile_success(before_tile_data, after_tile_data):
-            if before_tile_data not in tileable_data_set:
+            if before_tile_data.key not in tileable_keys_set:
                 return after_tile_data
             tile_chunk_keys = [c.key for c in after_tile_data.chunks]
             result_keys.extend(tile_chunk_keys)
-            tileable_data_to_chunk_keys[before_tile_data] = tile_chunk_keys
+            tileable_data_key_to_chunk_keys[before_tile_data.key] = tile_chunk_keys
             if not fetch:
                 pass
             elif len(after_tile_data.chunks) > 1:
@@ -726,7 +726,7 @@ class Executor(object):
         while True:
             # build chunk graph, tile will be done during building
             chunk_graph = chunk_graph_builder.build(tileables, tileable_graph=tileable_graph)
-            tileable_graph = chunk_graph_builder.iterative_tileable_graphs[-1]
+            tileable_graph = chunk_graph_builder.prev_tileable_graph
             temp_result_keys = set(result_keys)
             if not chunk_graph_builder.done:
                 # add temporary chunks keys into result keys
@@ -744,6 +744,8 @@ class Executor(object):
                         {k for k in intermediate_result_keys
                          if k not in result_keys and k in chunk_result}
                     to_release_keys.extend(intermediate_to_release_keys)
+                delattr(chunk_graph_builder, '_prev_tileable_graph')
+                del tileable_graph, tileable_graph_builder
                 break
             else:
                 # update shape of tileable and its chunks
@@ -759,11 +761,11 @@ class Executor(object):
         # remove variables that useless
         del executed_keys, node_to_fetch
 
-        for tileable, tileable_data in zip(tileables, tileable_datas):
+        for tileable in tileables:
             if tileable.key in self.stored_tileables:
                 self.stored_tileables[tileable.key][0].add(tileable.id)
             else:
-                chunk_keys = tileable_data_to_chunk_keys[tileable_data]
+                chunk_keys = tileable_data_key_to_chunk_keys[tileable.key]
                 self.stored_tileables[tileable.key] = tuple([{tileable.id}, set(chunk_keys)])
         self._chunk_result.update(chunk_result)
         chunk_results = self._chunk_result
