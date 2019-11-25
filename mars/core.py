@@ -397,9 +397,7 @@ class TileableData(SerializableWithKey, Tileable):
     @property
     def params(self):
         # params return the properties which useful to rebuild a new tileable object
-        return {
-            'shape': self.shape
-        }
+        return dict()
 
     @property
     def extra_params(self):
@@ -535,6 +533,13 @@ class HasShapeTileableData(TileableData):
     @property
     def size(self):
         return np.prod(self.shape).item()
+
+    @property
+    def params(self):
+        # params return the properties which useful to rebuild a new tileable object
+        return {
+            'shape': self.shape
+        }
 
 
 class ObjectData(TileableData):
