@@ -137,6 +137,9 @@ class Test(unittest.TestCase):
             np.testing.assert_array_equal(result[8:, :4], np.zeros((2, 4)))
 
         arr3 = mt.ones((10, 5), chunk_size=4) - 1
+        # arr1's data is used by arr2,
+        # so if arr2 not deleted, arr1's data will not be gc collected
+        del arr2
 
         with self.assertRaises(ValueError):
             arr3.fetch()
@@ -206,6 +209,9 @@ class Test(unittest.TestCase):
             np.testing.assert_array_equal(r.fetch(), np.zeros((10, 10)) + 1)
 
         a = mt.zeros((10, 10))
+        # a's data is used by r,
+        # if not deleted, a's data would not be gc collected
+        del r
         with self.assertRaises(ValueError):
             a.fetch()
 
