@@ -257,6 +257,7 @@ def get_tiled(tileable):
 
 class GraphBuilder(object):
     def __init__(self, graph=None, graph_cls=DAG, node_processor=None):
+        self._graph_cls = graph_cls
         if graph is not None:
             self._graph = graph
         else:
@@ -405,8 +406,11 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
         self._done = False
         super(IterativeChunkGraphBuilder, self).__init__(
             graph=graph, graph_cls=graph_cls, node_processor=node_processor,
-            compose=compose, on_tile=on_tile, on_tile_success=on_tile_success,
+            compose=compose, on_tile=on_tile,
+            on_tile_success=self._wrap_on_tile_success(on_tile_success),
             on_tile_failure=self._wrap_on_tile_failure(on_tile_failure))
+        if self._graph_cls is None:
+            self._graph_cls = type(self._graph)
 
     def _wrap_on_tile_failure(self, on_tile_failure):
         def inner(op, exc_info):
@@ -417,6 +421,20 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
                     on_tile_failure(op, exc_info)
                 else:
                     six.reraise(*exc_info)
+        return inner
+
+    def _wrap_on_tile_success(self, on_tile_success):
+        def inner(tile_before, tile_after):
+            # if tile succeed, add the node before tiling
+            # to current iterative tileable graph
+            if on_tile_success is not None:
+                tile_after = on_tile_success(tile_before, tile_after)
+            iterative_tileable_graph = self._iterative_tileable_graphs[-1]
+            iterative_tileable_graph.add_node(tile_before)
+            for inp in tile_before.inputs:
+                if inp in iterative_tileable_graph:
+                    iterative_tileable_graph.add_edge(inp, tile_before)
+            return tile_after
         return inner
 
     @property
@@ -440,24 +458,16 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
             raise TilesFail('Tile fail due to failure of inputs')
         return super(IterativeChunkGraphBuilder, self)._tile(tileable_data, on_tile)
 
-    def _append_tileable_graph(self, tileable_graph):
-        new_tileable_graph = type(tileable_graph)()
-        for n in tileable_graph.topological_iter():
-            if n.op in self.failed_ops:
-                continue
-            new_tileable_graph.add_node(n)
-            for p in tileable_graph.iter_predecessors(n):
-                if p in new_tileable_graph:
-                    new_tileable_graph.add_edge(p, n)
-        self._iterative_tileable_graphs.append(new_tileable_graph)
-
     @enter_build_mode
     def build(self, tileables, tileable_graph=None):
+        tileable_graph = self._get_tileable_data_graph(tileables, tileable_graph)
+        self._graph = self._graph_cls()
         self._failed_ops.clear()
+        self._iterative_tileable_graphs.append(type(tileable_graph)())
+
         chunk_graph = super(IterativeChunkGraphBuilder, self).build(
             tileables, tileable_graph=tileable_graph)
         self._iterative_chunk_graphs.append(chunk_graph)
-        self._append_tileable_graph(tileable_graph)
         if len(self._failed_ops) == 0:
             self._done = True
         return chunk_graph

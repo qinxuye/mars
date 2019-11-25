@@ -35,7 +35,8 @@ except ImportError:  # pragma: no cover
 
 from .operands import Fetch, ShuffleProxy
 from .graph import DirectedGraph
-from .tiles import TileableGraphBuilder, IterativeChunkGraphBuilder, get_tiled
+from .tiles import TileableGraphBuilder, IterativeChunkGraphBuilder, \
+    ChunkGraphBuilder, get_tiled
 from .compat import six, futures, OrderedDict, enum
 from .utils import kernel_mode, build_fetch, calc_nsplits
 
@@ -734,12 +735,12 @@ class Executor(object):
         # build tileable graph
         tileable_graph_builder = TileableGraphBuilder()
         tileable_graph = tileable_graph_builder.build(tileables)
-
+        chunk_graph_builder = IterativeChunkGraphBuilder(
+            graph_cls=DirectedGraph, node_processor=_generate_fetch_if_executed,
+            compose=compose, on_tile_success=_on_tile_success)
+        intermediate_result_keys = set()
         while True:
             # build chunk graph, tile will be done during building
-            chunk_graph_builder = IterativeChunkGraphBuilder(
-                graph_cls=DirectedGraph, node_processor=_generate_fetch_if_executed,
-                compose=compose, on_tile_success=_on_tile_success)
             chunk_graph = chunk_graph_builder.build(tileables, tileable_graph=tileable_graph)
             tileable_graph = chunk_graph_builder.iterative_tileable_graphs[-1]
             temp_result_keys = set(result_keys)
@@ -753,15 +754,25 @@ class Executor(object):
                                print_progress=print_progress, mock=mock,
                                chunk_result=chunk_result)
             if chunk_graph_builder.done:
+                if len(intermediate_result_keys) > 0:
+                    # failed before
+                    intermediate_to_release_keys = \
+                        {k for k in intermediate_result_keys
+                         if k not in result_keys and k in chunk_result}
+                    to_release_keys.extend(intermediate_to_release_keys)
                 break
             else:
                 # update shape of tileable and its chunks
                 self._update_tileable_and_chunk_shape(
                     tileable_graph, chunk_result, chunk_graph_builder.failed_ops)
+                executed_keys.update(temp_result_keys)
+                intermediate_result_keys.update(temp_result_keys)
                 # add the node that failed
                 tileable_graph_builder = TileableGraphBuilder(trace_inputs=False)
                 tileable_graph = tileable_graph_builder.build(
                     itertools.chain(*(op.outputs for op in chunk_graph_builder.failed_ops)))
+
+        # remove variables that useless
         del executed_keys, node_to_fetch
 
         for tileable, tileable_data in zip(tileables, tileable_datas):

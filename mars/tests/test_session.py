@@ -403,11 +403,31 @@ class Test(unittest.TestCase):
         self.assertEqual(sess.run(f), expect_nbytes)
 
     def testIterativeTiling(self):
-        raw = np.random.rand(100)
+        sess = new_session()
+
+        rs = np.random.RandomState(0)
+        raw = rs.rand(100)
         a = mt.tensor(raw, chunk_size=10)
         a.sort()
-        c = a[:10]
+        c = a[:5]
 
-        sess = new_session()
         ret = sess.run(c)
-        np.testing.assert_array_equal(ret, np.sort(raw)[:10])
+        np.testing.assert_array_equal(ret, np.sort(raw)[:5])
+
+        executor = sess._sess.executor
+        self.assertEqual(len(executor.chunk_result), 1)
+        executor.chunk_result.clear()
+
+        raw1 = rs.rand(20)
+        raw2 = rs.rand(20)
+        a = mt.tensor(raw1, chunk_size=10)
+        a.sort()
+        b = mt.tensor(raw2, chunk_size=15) + 1
+        c = mt.concatenate([a[:10], b])
+        c.sort()
+        d = c[:5]
+
+        ret = sess.run(d)
+        expected = np.sort(np.concatenate([np.sort(raw1)[:10], raw2 + 1]))[:5]
+        np.testing.assert_array_equal(ret, expected)
+        self.assertEqual(len(executor.chunk_result), len(get_tiled(d).chunks))
