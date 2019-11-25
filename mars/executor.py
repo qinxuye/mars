@@ -687,12 +687,13 @@ class Executor(object):
         def _generate_fetch_if_executed(nd):
             # node processor that if the node is executed
             # replace it with a fetch node
-            if nd.key not in executed_keys:  # noqa: F821
+            _keys, _to_fetch = executed_keys, node_to_fetch  # noqa: F821
+            if nd.key not in _keys:
                 return nd
-            if nd in node_to_fetch:  # noqa: F821
-                return node_to_fetch[nd]  # noqa: F821
+            if nd in _to_fetch:
+                return _to_fetch[nd]
             fn = build_fetch(nd).data
-            node_to_fetch[nd] = fn  # noqa: F821
+            _to_fetch[nd] = fn
             return fn
 
         def _on_tile_success(before_tile_data, after_tile_data):
