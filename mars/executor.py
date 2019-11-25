@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover
 
 from .operands import Fetch, ShuffleProxy
 from .graph import DirectedGraph
-from .tiles import TileableGraphBuilder, ChunkGraphBuilder, get_tiled
+from .tiles import TileableGraphBuilder, IterativeChunkGraphBuilder, get_tiled
 from .compat import six, futures, OrderedDict, enum
 from .utils import kernel_mode, build_fetch, calc_nsplits
 
@@ -660,6 +660,29 @@ class Executor(object):
     execute_tensor = execute_tileable
     execute_dataframe = execute_tileable
 
+    @classmethod
+    def _has_unknown_shape(cls, tileable):
+        if getattr(tileable, 'shape', None) is None:
+            return False
+        if any(np.isnan(s) for s in tileable.shape):
+            return True
+        if any(np.isnan(s) for s in itertools.chain(*tileable.nsplits)):
+            return True
+        return False
+
+    def _update_tileable_and_chunk_shape(self, tileable_graph, chunk_result, failed_ops):
+        for n in tileable_graph:
+            if n.op in failed_ops:
+                continue
+            tiled_n = get_tiled(n)
+            if self._has_unknown_shape(tiled_n):
+                for c in tiled_n.chunks:
+                    c.data._shape = chunk_result[c.key].shape
+                new_nsplits = self.get_tileable_nsplits(n, chunk_result=chunk_result)
+                for node in (n, tiled_n):
+                    node._update_shape(tuple(sum(nsplit) for nsplit in new_nsplits))
+                tiled_n._nsplits = new_nsplits
+
     @kernel_mode
     def execute_tileables(self, tileables, fetch=True, n_parallel=None, n_thread=None,
                           print_progress=False, mock=False, compose=True):
@@ -711,17 +734,36 @@ class Executor(object):
         # build tileable graph
         tileable_graph_builder = TileableGraphBuilder()
         tileable_graph = tileable_graph_builder.build(tileables)
-        # build chunk graph, tile will be done during building
-        chunk_graph_builder = ChunkGraphBuilder(
-            graph_cls=DirectedGraph, node_processor=_generate_fetch_if_executed,
-            compose=compose, on_tile_success=_on_tile_success)
-        chunk_graph = chunk_graph_builder.build(tileables, tileable_graph=tileable_graph)
+
+        while True:
+            # build chunk graph, tile will be done during building
+            chunk_graph_builder = IterativeChunkGraphBuilder(
+                graph_cls=DirectedGraph, node_processor=_generate_fetch_if_executed,
+                compose=compose, on_tile_success=_on_tile_success)
+            chunk_graph = chunk_graph_builder.build(tileables, tileable_graph=tileable_graph)
+            tileable_graph = chunk_graph_builder.iterative_tileable_graphs[-1]
+            temp_result_keys = set(result_keys)
+            if not chunk_graph_builder.done:
+                # add temporary chunks keys into result keys
+                for n in chunk_graph:
+                    if chunk_graph.count_successors(n) == 0:
+                        temp_result_keys.add(n.key)
+            # execute chunk graph
+            self.execute_graph(chunk_graph, list(temp_result_keys), n_parallel=n_parallel or n_thread,
+                               print_progress=print_progress, mock=mock,
+                               chunk_result=chunk_result)
+            if chunk_graph_builder.done:
+                break
+            else:
+                # update shape of tileable and its chunks
+                self._update_tileable_and_chunk_shape(
+                    tileable_graph, chunk_result, chunk_graph_builder.failed_ops)
+                # add the node that failed
+                tileable_graph_builder = TileableGraphBuilder(trace_inputs=False)
+                tileable_graph = tileable_graph_builder.build(
+                    itertools.chain(*(op.outputs for op in chunk_graph_builder.failed_ops)))
         del executed_keys, node_to_fetch
 
-        # execute chunk graph
-        self.execute_graph(chunk_graph, result_keys, n_parallel=n_parallel or n_thread,
-                           print_progress=print_progress, mock=mock,
-                           chunk_result=chunk_result)
         for tileable, tileable_data in zip(tileables, tileable_datas):
             if tileable.key in self.stored_tileables:
                 self.stored_tileables[tileable.key][0].add(tileable.id)
@@ -887,11 +929,12 @@ class Executor(object):
     #             indexed_results.append(result)
     #     return indexed_results
 
-    def get_tileable_nsplits(self, tileable):
+    def get_tileable_nsplits(self, tileable, chunk_result=None):
         chunk_idx_to_shape = OrderedDict()
         tiled = get_tiled(tileable)
+        chunk_result = chunk_result if chunk_result is not None else self._chunk_result
         for chunk in tiled.chunks:
-            chunk_idx_to_shape[chunk.index] = self._chunk_result[chunk.key].shape
+            chunk_idx_to_shape[chunk.index] = chunk_result[chunk.key].shape
         return calc_nsplits(chunk_idx_to_shape)
 
     # def get_tileable_nsplits(self, tileable):

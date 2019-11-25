@@ -401,3 +401,13 @@ class Test(unittest.TestCase):
                         pd.DataFrame(np.ones((10, 20), dtype=int)).memory_usage().sum() + \
                         sys.getsizeof(4)
         self.assertEqual(sess.run(f), expect_nbytes)
+
+    def testIterativeTiling(self):
+        raw = np.random.rand(100)
+        a = mt.tensor(raw, chunk_size=10)
+        a.sort()
+        c = a[:10]
+
+        sess = new_session()
+        ret = sess.run(c)
+        np.testing.assert_array_equal(ret, np.sort(raw)[:10])
