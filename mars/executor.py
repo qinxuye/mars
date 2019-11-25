@@ -642,22 +642,6 @@ class Executor(object):
         self._chunk_result.update(chunk_result)
         return ret
 
-        # if concat:
-        #     # only for tests
-        #     tileable.tiles()
-        #     if len(tileable.chunks) > 1:
-        #         tileable = tileable.op.concat_tileable_chunks(tileable)
-        #
-        # # shallow copy
-        # chunk_result = self._chunk_result.copy()
-        # graph = tileable.build_graph(cls=DirectedGraph, tiled=True, compose=compose)
-        # ret = self.execute_graph(graph, [c.key for c in tileable.chunks],
-        #                          n_parallel=n_parallel or n_thread,
-        #                          print_progress=print_progress, mock=mock,
-        #                          chunk_result=chunk_result)
-        # self._chunk_result.update(chunk_result)
-        # return ret
-
     execute_tensor = execute_tileable
     execute_dataframe = execute_tileable
 
@@ -700,15 +684,15 @@ class Executor(object):
         executed_keys = set(chunk_result)
         node_to_fetch = dict()
 
-        def _generate_fetch_if_executed(n):
+        def _generate_fetch_if_executed(nd):
             # node processor that if the node is executed
             # replace it with a fetch node
-            if n.key not in executed_keys:  # noqa: F821
-                return n
-            if n in node_to_fetch:  # noqa: F821
-                return node_to_fetch[n]  # noqa: F821
-            fn = build_fetch(n).data
-            node_to_fetch[n] = fn  # noqa: F821
+            if nd.key not in executed_keys:  # noqa: F821
+                return nd
+            if nd in node_to_fetch:  # noqa: F821
+                return node_to_fetch[nd]  # noqa: F821
+            fn = build_fetch(nd).data
+            node_to_fetch[nd] = fn  # noqa: F821
             return fn
 
         def _on_tile_success(before_tile_data, after_tile_data):
@@ -792,63 +776,6 @@ class Executor(object):
             for k in to_release_keys:
                 del chunk_results[k]
 
-    # @kernel_mode
-    # def execute_tileables(self, tileables, fetch=True, n_parallel=None, n_thread=None,
-    #                       print_progress=False, mock=False, compose=True):
-    #     graph = DirectedGraph()
-    #
-    #     # shallow copy, prevent from any chunk key decref
-    #     chunk_result = self._chunk_result.copy()
-    #     result_keys = []
-    #     to_release_keys = []
-    #     concat_keys = []
-    #     for tileable in tileables:
-    #         tileable.tiles()
-    #         chunk_keys = [c.key for c in tileable.chunks]
-    #         result_keys.extend(chunk_keys)
-    #
-    #         if tileable.key in self.stored_tileables:
-    #             self.stored_tileables[tileable.key][0].add(tileable.id)
-    #         else:
-    #             self.stored_tileables[tileable.key] = tuple([{tileable.id}, set(chunk_keys)])
-    #         if not fetch:
-    #             # no need to generate concat keys
-    #             pass
-    #         elif len(tileable.chunks) > 1:
-    #             # if need to fetch data and chunks more than 1, we concatenate them into 1
-    #             tileable = tileable.op.concat_tileable_chunks(tileable)
-    #             chunk = tileable.chunks[0]
-    #             result_keys.append(chunk.key)
-    #             # the concatenated key
-    #             concat_keys.append(chunk.key)
-    #             # after return the data to user, we release the reference
-    #             to_release_keys.append(chunk.key)
-    #         else:
-    #             concat_keys.append(tileable.chunks[0].key)
-    #
-    #         # Do not do compose here, because building graph has not finished yet
-    #         tileable.build_graph(graph=graph, tiled=True, compose=False,
-    #                              executed_keys=list(chunk_result.keys()))
-    #     if compose:
-    #         # finally do compose according to option
-    #         graph.compose(keys=list(itertools.chain(*[[c.key for c in t.chunks]
-    #                                                   for t in tileables])))
-    #
-    #     self.execute_graph(graph, result_keys, n_parallel=n_parallel or n_thread,
-    #                        print_progress=print_progress, mock=mock,
-    #                        chunk_result=chunk_result)
-    #
-    #     self._chunk_result.update(chunk_result)
-    #     results = self._chunk_result
-    #     try:
-    #         if fetch:
-    #             return [results[k] for k in concat_keys]
-    #         else:
-    #             return
-    #     finally:
-    #         for k in to_release_keys:
-    #             del results[k]
-
     execute_tensors = execute_tileables
     execute_dataframes = execute_tileables
 
@@ -867,6 +794,7 @@ class Executor(object):
         from .tensor.indexing import TensorIndex
         from .dataframe.indexing import DataFrameIlocGetItem
 
+        to_release_tileables = []
         for tileable in tileables:
             if tileable.key not in self.stored_tileables and \
                     isinstance(tileable.op, (TensorIndex, DataFrameIlocGetItem)):
@@ -874,6 +802,7 @@ class Executor(object):
                 if not all(isinstance(ind, (slice, Integral)) for ind in indexes):
                     raise ValueError('Only support fetch data slices')
                 key = tileable.inputs[0].key
+                to_release_tileables.append(tileable)
             else:
                 key = tileable.key
             if key not in self.stored_tileables:
@@ -881,64 +810,13 @@ class Executor(object):
                 raise ValueError(
                     'Tileable object {} to fetch must be executed first'.format(tileable))
 
-        # if chunk executed, fetch chunk mechanism will be triggered in execute_tileables
-        return self.execute_tileables(tileables, **kw)
-
-    # @kernel_mode
-    # def fetch_tileables(self, tileables, **kw):
-    #     from .tensor.indexing import TensorIndex
-    #     from .dataframe.indexing import DataFrameIlocGetItem
-    #
-    #     results = []
-    #     to_concat_tileables = OrderedDict()
-    #
-    #     tileable_indexes = []
-    #     for i, tileable in enumerate(tileables):
-    #         if tileable.key not in self.stored_tileables and \
-    #                 isinstance(tileable.op, (TensorIndex, DataFrameIlocGetItem)):
-    #             key = tileable.inputs[0].key
-    #             indexes = tileable.op.indexes
-    #             tileable = tileable.inputs[0]
-    #             if not all(isinstance(ind, (slice, Integral)) for ind in indexes):
-    #                 raise ValueError('Only support fetch data slices')
-    #         else:
-    #             key = tileable.key
-    #             indexes = None
-    #
-    #         tileable_indexes.append(indexes)
-    #
-    #         if key not in self.stored_tileables:
-    #             # check if the tileable is executed before
-    #             raise ValueError(
-    #                 'Tileable object to fetch must be executed before, got {0}'.format(tileable))
-    #
-    #         if len(tileable.chunks) == 1:
-    #             result = self._chunk_result[tileable.chunks[0].key]
-    #             results.append(result)
-    #             continue
-    #
-    #         # generate Fetch op for each chunk
-    #         tileable = build_fetch(tileable)
-    #         # add this concat tileable into the list which shall be executed later
-    #         to_concat_tileables[i] = tileable
-    #         results.append(None)
-    #
-    #     # execute the concat tileables together
-    #     if to_concat_tileables:
-    #         concat_results = self.execute_tileables(list(to_concat_tileables.values()), **kw)
-    #         for j, concat_result in zip(to_concat_tileables, concat_results):
-    #             results[j] = concat_result
-    #
-    #     indexed_results = []
-    #     for indexes, result in zip(tileable_indexes, results):
-    #         if indexes:
-    #             if isinstance(result, (pd.DataFrame, pd.Series)):
-    #                 indexed_results.append(result.iloc[indexes])
-    #             else:
-    #                 indexed_results.append(result[indexes])
-    #         else:
-    #             indexed_results.append(result)
-    #     return indexed_results
+        try:
+            # if chunk executed, fetch chunk mechanism will be triggered in execute_tileables
+            return self.execute_tileables(tileables, **kw)
+        finally:
+            for to_release_tileable in to_release_tileables:
+                for c in get_tiled(to_release_tileable).chunks:
+                    del self._chunk_result[c.key]
 
     def get_tileable_nsplits(self, tileable, chunk_result=None):
         chunk_idx_to_shape = OrderedDict()
@@ -947,12 +825,6 @@ class Executor(object):
         for chunk in tiled.chunks:
             chunk_idx_to_shape[chunk.index] = chunk_result[chunk.key].shape
         return calc_nsplits(chunk_idx_to_shape)
-
-    # def get_tileable_nsplits(self, tileable):
-    #     chunk_idx_to_shape = OrderedDict(
-    #         (c.index, r.shape) for c, r in zip(tileable.chunks, [self._chunk_result[c.key]
-    #                                                              for c in tileable.chunks]))
-    #     return calc_nsplits(chunk_idx_to_shape)
 
     def decref(self, *keys):
         rs = set(self._chunk_result)
