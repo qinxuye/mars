@@ -19,6 +19,7 @@ import numpy as np
 from .core import Entity, Base
 from .context import LocalDictContext
 from .tiles import get_tiled
+from .executor import Executor
 try:
     from .resource import cpu_count, cuda_count
 except ImportError:  # pragma: no cover
@@ -28,8 +29,6 @@ except ImportError:  # pragma: no cover
 
 class LocalSession(object):
     def __init__(self, **kwargs):
-        from .executor import Executor
-
         self._endpoint = None
         self._context = LocalDictContext(self)
         self._executor = Executor(storage=self._context)
