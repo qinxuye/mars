@@ -402,6 +402,51 @@ def kernel_mode(func):
     return _wrapped
 
 
+_build_mode = threading.local()
+
+
+class BuildMode(object):
+    def __init__(self):
+        self.is_build_mode = False
+        self._old_mode = None
+        self._enter_times = 0
+
+    def __enter__(self):
+        if self._enter_times == 0:
+            # check to prevent nested enter and exit
+            self._old_mode = self.is_build_mode
+            self.is_build_mode = True
+        self._enter_times += 1
+
+    def __exit__(self, *_):
+        self._enter_times -= 1
+        if self._enter_times == 0:
+            self.is_build_mode = self._old_mode
+            self._old_mode = None
+
+
+def build_mode():
+    ret = getattr(_build_mode, 'build_mode', None)
+    if ret is None:
+        ret = BuildMode()
+        _build_mode.build_mode = ret
+
+    return ret
+
+
+def enter_build_mode(func):
+    """
+    Decorator version of build_mode.
+
+    :param func: function
+    :return: the result of function
+    """
+    def inner(*args, **kwargs):
+        with build_mode():
+            return func(*args, **kwargs)
+    return inner
+
+
 def build_exc_info(exc_type, *args, **kwargs):
     try:
         raise exc_type(*args, **kwargs)
@@ -470,8 +515,8 @@ def build_fetch_chunk(chunk, input_chunk_keys=None, **kwargs):
     return op.new_chunk(None, kws=[params], _key=chunk.key, _id=chunk.id, **kwargs)
 
 
-def build_fetch_tileable(tileable, coarse=False):
-    if coarse or tileable.is_coarse():
+def build_fetch_tileable(tileable):
+    if tileable.is_coarse():
         chunks = None
     else:
         chunks = []
@@ -487,12 +532,12 @@ def build_fetch_tileable(tileable, coarse=False):
                                 _key=tileable.key, _id=tileable.id, **params)[0]
 
 
-def build_fetch(entity, coarse=False):
+def build_fetch(entity):
     from .core import Chunk, ChunkData
     if isinstance(entity, (Chunk, ChunkData)):
         return build_fetch_chunk(entity)
     elif hasattr(entity, 'tiles'):
-        return build_fetch_tileable(entity, coarse=coarse)
+        return build_fetch_tileable(entity)
     else:
         raise TypeError('Type %s not supported' % type(entity).__name__)
 
@@ -602,3 +647,11 @@ def numpy_dtype_from_descr_json(obj):
     if isinstance(obj, list):
         return np.dtype([(k, numpy_dtype_from_descr_json(v)) for k, v in obj])
     return obj
+
+
+def check_chunks_unknown_shape(tileables, error_cls):
+    for t in tileables:
+        for ns in t.nsplits:
+            if any(np.isnan(s) for s in ns):
+                raise error_cls(
+                    'Input tileable {} has chunks with unknown shape'.format(t))

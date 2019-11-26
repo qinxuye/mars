@@ -724,7 +724,7 @@ class DataFrame(TileableEntity):
                 raise
 
 
-class DataFrameGroupByData(TileableData):
+class DataFrameGroupByData(HasShapeTileableData):
     __slots__ = ()
 
     _chunks = ListField('chunks', ValueType.reference(DataFrameChunkData),

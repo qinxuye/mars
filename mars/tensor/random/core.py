@@ -153,7 +153,7 @@ class TensorRandomOperandMixin(TensorOperandMixin):
 
         new_op = op.copy()
         return new_op.new_tensors(op.inputs, tensor.shape, order=tensor.order,
-                                  chunks=out_chunks, nsplits=nsplits)
+                                  chunks=out_chunks, nsplits=nsplits, **tensor.extra_params)
 
     @classmethod
     def execute(cls, ctx, op):
@@ -206,7 +206,7 @@ class TensorRandomOperandMixin(TensorOperandMixin):
                 else:
                     raise
 
-    def _get_shape(self, shapes):
+    def _calc_shape(self, shapes):
         shapes = list(shapes)
         if getattr(self, '_size', None) is not None:
             shapes.append(getattr(self, '_size'))
@@ -248,7 +248,7 @@ class TensorRandomOperandMixin(TensorOperandMixin):
 
         if tensor:
             if shape is None:
-                shape = self._get_shape(to_broadcast_shapes)
+                shape = self._calc_shape(to_broadcast_shapes)
 
             for field, inp in field_to_obj.items():
                 if field not in to_one_chunk_fields:
@@ -261,15 +261,22 @@ class TensorRandomOperandMixin(TensorOperandMixin):
             if field in field_to_obj:
                 setattr(self, field, next(inputs_iter))
 
+    @classmethod
+    def _get_shape(cls, kws, kw):
+        if kw.get('shape') is not None:
+            return kw.get('shape')
+        elif kws is not None and len(kws) > 0:
+            return kws[0].get('shape')
+
     def _new_tileables(self, inputs, kws=None, **kw):
         raw_chunk_size = kw.get('chunk_size', None)
-        shape = kw.get('shape', None)
+        shape = self._get_shape(kws, kw)
         with self._get_inputs_shape_by_given_fields(inputs, shape, raw_chunk_size, True) as (inputs, shape):
             kw['shape'] = shape
             return super(TensorRandomOperandMixin, self)._new_tileables(inputs, kws=kws, **kw)
 
     def _new_chunks(self, inputs, kws=None, **kw):
-        shape = kw.get('shape', None)
+        shape = self._get_shape(kws, kw)
         with self._get_inputs_shape_by_given_fields(inputs, shape, None, False) as (inputs, shape):
             kw['shape'] = shape
             return super(TensorRandomOperandMixin, self)._new_chunks(inputs, kws=kws, **kw)

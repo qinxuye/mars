@@ -318,3 +318,10 @@ class Test(unittest.TestCase):
         chunk_keys = [c.key for c in a.cix[:, :, :]]
         expected = [c.key for c in a.chunks]
         self.assertEqual(chunk_keys, expected)
+
+    def testCheckChunksUnknownShape(self):
+        with self.assertRaises(ValueError):
+            a = mt.random.rand(10, chunk_size=5)
+            mt.random.shuffle(a)
+            a = a.tiles()
+            utils.check_chunks_unknown_shape([a], ValueError)

@@ -538,7 +538,8 @@ class TensorOutBinOp(TensorOperand, TensorElementWiseWithInputs):
 
         inputs = filter_inputs([x, out1, out2, where])
         t1, t2 = self.new_tensors(inputs, shape, dtype=dtype,
-                                  kws=[{'order': order1}, {'order': order2}])
+                                  kws=[{'order': order1, 'side': 'left'},
+                                       {'order': order2, 'side': 'right'}])
 
         if out1 is None and out2 is None:
             return ExecutableTuple([t1, t2])
