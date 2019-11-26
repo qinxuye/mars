@@ -731,8 +731,8 @@ class DataFrameGroupByData(HasShapeTileableData):
                         on_serialize=lambda x: [it.data for it in x] if x is not None else x,
                         on_deserialize=lambda x: [DataFrameChunk(it) for it in x] if x is not None else x)
 
-    def __init__(self, op=None, shape=None, chunks=None, **kw):
-        super(DataFrameGroupByData, self).__init__(_op=op, _shape=shape, _chunks=chunks, **kw)
+    def __init__(self, op=None, chunks=None, **kw):
+        super(DataFrameGroupByData, self).__init__(_op=op, _chunks=chunks, **kw)
 
 
 class DataFrameGroupBy(TileableEntity):
