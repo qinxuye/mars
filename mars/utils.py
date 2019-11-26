@@ -527,7 +527,7 @@ def build_fetch_tileable(tileable):
     tileable_op = tileable.op
     params = tileable.params.copy()
 
-    new_op = tileable_op.get_fetch_op_cls(tileable)()
+    new_op = tileable_op.get_fetch_op_cls(tileable)(_id=tileable_op.id)
     return new_op.new_tileables(None, chunks=chunks, nsplits=tileable.nsplits,
                                 _key=tileable.key, _id=tileable.id, **params)[0]
 

@@ -197,9 +197,12 @@ _tileable_data_to_tiled = weakref.WeakKeyDictionary()
 
 
 @enter_build_mode
-def get_tiled(tileable):
+def get_tiled(tileable, raise_err_if_not_tiled=True):
     tileable_data = tileable.data if hasattr(tileable, 'data') else tileable
-    return _tileable_data_to_tiled[tileable_data]
+    if raise_err_if_not_tiled:
+        return _tileable_data_to_tiled[tileable_data]
+    else:
+        return _tileable_data_to_tiled.get(tileable_data)
 
 
 class GraphBuilder(object):
