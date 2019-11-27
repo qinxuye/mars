@@ -366,7 +366,7 @@ class GraphActor(SchedulerActor):
             _detect_cancel()
 
             with self._open_dump_file('graph') as outf:  # pragma: no cover
-                graph = self.get_chunk_graph()
+                graph = self._chunk_graph_cache
                 for n in graph:
                     outf.write(
                         '%s(%s)[%s] -> %s\n' % (
@@ -443,9 +443,7 @@ class GraphActor(SchedulerActor):
 
     @log_unhandled
     def get_chunk_graph(self):
-        if self._chunk_graph_cache is None:
-            self.reload_chunk_graph()
-        return self._chunk_graph_cache
+        return self._chunk_graph_builder.iterative_chunk_graphs[-1]
 
     def _gen_tileable_graph(self):
         if self._tileable_graph_cache is None:
