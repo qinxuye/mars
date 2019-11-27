@@ -206,16 +206,17 @@ def get_tiled(tileable, raise_err_if_not_tiled=True):
 
 
 class GraphBuilder(object):
-    def __init__(self, graph=None, graph_cls=DAG, node_processor=None):
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None,
+                 inputs_selector=None):
         self._graph_cls = graph_cls
         if graph is not None:
             self._graph = graph
         else:
             self._graph = graph_cls()
         self._node_processor = node_processor
-
-    def _get_inputs(self, node):
-        return node.inputs or []
+        if inputs_selector is None:
+            inputs_selector = lambda x: x
+        self._inputs_selector = inputs_selector
 
     def _add_nodes(self, nodes, visited):
         graph = self._graph
@@ -229,7 +230,7 @@ class GraphBuilder(object):
             visited.add(node)
             if not graph.contains(node):
                 graph.add_node(node)
-            children = self._get_inputs(node)
+            children = self._inputs_selector(node.inputs or [])
             for c in children:
                 if self._node_processor:
                     c = self._node_processor(c)
@@ -247,18 +248,10 @@ class GraphBuilder(object):
 
 class TileableGraphBuilder(GraphBuilder):
     def __init__(self, graph=None, graph_cls=DAG, node_processor=None,
-                 trace_inputs=True):
+                 inputs_selector=None):
         super(TileableGraphBuilder, self).__init__(graph=graph, graph_cls=graph_cls,
-                                                   node_processor=node_processor)
-        self._trace_inputs=trace_inputs
-        self._tileable_set = None
-
-    def _get_inputs(self, node):
-        inputs = super(TileableGraphBuilder, self)._get_inputs(node)
-        if not self._trace_inputs:
-            return [inp for inp in inputs if inp in self._tileable_set]
-        else:
-            return inputs
+                                                   node_processor=node_processor,
+                                                   inputs_selector=inputs_selector)
 
     @enter_build_mode
     def build(self, tileables, tileable_graph=None):
@@ -268,16 +261,17 @@ class TileableGraphBuilder(GraphBuilder):
         visited = set()
         nodes = list(itertools.chain(
             *(tileable.op.outputs for tileable in tileables)))
-        self._tileable_set = set(nodes)
         self._add_nodes(nodes, visited)
         return self._graph
 
 
 class ChunkGraphBuilder(GraphBuilder):
-    def __init__(self, graph=None, graph_cls=DAG, node_processor=None, compose=True,
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None,
+                 inputs_selector=None, compose=True,
                  on_tile=None, on_tile_success=None, on_tile_failure=None):
         super(ChunkGraphBuilder, self).__init__(graph=graph, graph_cls=graph_cls,
-                                                node_processor=node_processor)
+                                                node_processor=node_processor,
+                                                inputs_selector=inputs_selector)
         self._compose = compose
         self._on_tile = on_tile
         self._on_tile_success = on_tile_success
@@ -337,6 +331,10 @@ class ChunkGraphBuilder(GraphBuilder):
                 for t, td in zip(tileable_data.op.outputs, tiled):
                     if self._on_tile_success is not None:
                         td = self._on_tile_success(t, td)
+                        if td is None:
+                            # if return None after calling `on_tile_success`,
+                            # the chunks will not be added into chunk graph any more
+                            continue
                     nodes.extend(c.data for c in td.chunks)
                     if t in tileables_set:
                         keys.extend(c.key for c in td.chunks)

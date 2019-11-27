@@ -402,6 +402,19 @@ class Test(unittest.TestCase):
                         sys.getsizeof(4)
         self.assertEqual(sess.run(f), expect_nbytes)
 
+    def testMultiOutputsOp(self):
+        sess = new_session()
+
+        rs = np.random.RandomState(0)
+        raw = rs.rand(20, 5)
+        a = mt.tensor(raw, chunk_size=5)
+        q = mt.abs(mt.linalg.qr(a)[0])
+
+        ret = sess.run(q)
+        np.testing.assert_almost_equal(ret, np.abs(np.linalg.qr(raw)[0]))
+        self.assertEqual(len(sess._sess.executor.chunk_result),
+                         len(get_tiled(q).chunks))
+
     def testIterativeTiling(self):
         sess = new_session()
 

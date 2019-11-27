@@ -755,9 +755,12 @@ class Executor(object):
                 executed_keys.update(temp_result_keys)
                 intermediate_result_keys.update(temp_result_keys)
                 # add the node that failed
-                tileable_graph_builder = TileableGraphBuilder(trace_inputs=False)
-                tileable_graph = tileable_graph_builder.build(
-                    itertools.chain(*(op.outputs for op in chunk_graph_builder.failed_ops)))
+                failed_tileables = list(itertools.chain(
+                    *(op.outputs for op in chunk_graph_builder.failed_ops)))
+                failed_tileables_set = set(failed_tileables)
+                tileable_graph_builder = TileableGraphBuilder(
+                    inputs_selector=lambda inps: [inp for inp in inps if inp in failed_tileables_set])
+                tileable_graph = tileable_graph_builder.build(failed_tileables)
 
         for tileable in tileables:
             if tileable.key in self.stored_tileables:
@@ -765,16 +768,16 @@ class Executor(object):
             else:
                 chunk_keys = tileable_data_key_to_chunk_keys[tileable.key]
                 self.stored_tileables[tileable.key] = tuple([{tileable.id}, set(chunk_keys)])
-        self._chunk_result.update(chunk_result)
-        chunk_results = self._chunk_result
         try:
             if fetch:
-                return [chunk_results[k] for k in concat_keys]
+                return [chunk_result[k] for k in concat_keys]
             else:
                 return
         finally:
-            for k in to_release_keys:
-                del chunk_results[k]
+            for to_release_key in to_release_keys:
+                del chunk_result[to_release_key]
+            self._chunk_result.update(
+                {k: chunk_result[k] for k in result_keys if k in chunk_result})
 
     execute_tensors = execute_tileables
     execute_dataframes = execute_tileables
