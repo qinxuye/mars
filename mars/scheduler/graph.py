@@ -478,6 +478,37 @@ class GraphActor(SchedulerActor):
                         tn.key in self._target_tileable_chunk_ops:
                     self._tileables.append(tn)
 
+    @classmethod
+    def _merge_chunk_graph(cls, chunk_graph, update_chunk_graph):
+        chunk_key_id_to_chunk = dict()
+        for c in chunk_graph:
+            chunk_key_id_to_chunk[c.key, c.id] = c
+        for update_c in update_chunk_graph:
+            if isinstance(update_c.op, Fetch):
+                continue
+            chunk_graph.add_node(update_c)
+            for inp in update_c.inputs:
+                if inp in chunk_graph:
+                    chunk_graph.add_edge(inp, update_c)
+                elif isinstance(inp.op, Fetch):
+                    inp = chunk_key_id_to_chunk[inp.key, inp.id]
+                    chunk_graph.add_edge(inp, update_c)
+        return chunk_graph
+
+    @classmethod
+    def _prune_chunk_graph(cls, chunk_graph, result_chunk_keys):
+        reverse_chunk_graph = chunk_graph.build_reversed()
+        marked = set()
+        for c in reverse_chunk_graph.topological_iter():
+            if reverse_chunk_graph.count_predecessors(c) == 0 and \
+                    c.key in result_chunk_keys:
+                marked.add(c)
+            elif any(inp in marked for inp in reverse_chunk_graph.iter_predecessors(c)):
+                marked.add(c)
+        for n in chunk_graph:
+            if n not in marked:
+                chunk_graph.remove_node(n)
+
     @log_unhandled
     @enter_build_mode
     def prepare_graph(self, compose=True):
@@ -489,6 +520,7 @@ class GraphActor(SchedulerActor):
         chunk_graph = self._gen_chunk_graph()
         tileable_key_opid_to_tiled = self._tileable_key_opid_to_tiled
         self._gen_target_tileable_chunk_ops()
+        chunk_result_keys = set()
 
         if self._chunk_graph_builder is None:
             def on_tile(tiled_before):
@@ -504,7 +536,19 @@ class GraphActor(SchedulerActor):
                         self.context.wraps(handler.dispatch), tiled_before).result()
 
             def on_tile_success(tiled_before, tiled_after):
-                tileable_key_opid_to_tiled[(tiled_before.key, tiled_before.op.id)] = tiled_after
+                if isinstance(tiled_before.op, Fetch):
+                    # return None to prevent adding fetch chunks into graph
+                    return
+                else:
+                    tileable_key_opid_to_tiled[(tiled_before.key, tiled_before.op.id)] = tiled_after
+                    if tiled_before in self._tileables:
+                        for c in tiled_after.chunks:
+                            chunk_result_keys.add(c.key)
+                            self._terminal_chunk_op_tileable[c.op.key].add(tiled_before.key)
+                            self._target_tileable_chunk_ops[tiled_before.key].add(c.op.key)
+                            self._op_key_to_chunk[c.op.key].append(c)
+
+                    return tiled_after
 
             self._chunk_graph_builder = IterativeChunkGraphBuilder(
                 on_tile=on_tile, compose=compose,
@@ -517,16 +561,21 @@ class GraphActor(SchedulerActor):
         else:
             # some TilesFail happens before
             # build tileable graph from failed ops and their inputs
-            tileable_graph_builder = TileableGraphBuilder(trace_inputs=False)
-            tileable_objs = set(itertools.chain(
+            failed_tileable_set = set(itertools.chain(
                 *(op.outputs for op in chunk_graph_builder.failed_ops)))
             for failed_op in chunk_graph_builder.failed_ops:
                 for inp in failed_op.inputs:
-                    if inp not in tileable_objs:
-                        tileable_objs.add(build_fetch_tileable(inp))
-            to_run_tileable_graph = tileable_graph_builder.build(tileable_objs)
+                    if inp not in failed_tileable_set:
+                        failed_tileable_set.add(build_fetch_tileable(inp))
+            tileable_graph_builder = TileableGraphBuilder(
+                inputs_selector=lambda inps: [inp for inp in inps if inp in failed_tileable_set])
+            to_run_tileable_graph = tileable_graph_builder.build(failed_tileable_set)
             cur_chunk_graph = chunk_graph_builder.build(
                 self._tileables, tileable_graph=to_run_tileable_graph)
+
+        self._merge_chunk_graph(chunk_graph, cur_chunk_graph)
+        if chunk_graph_builder.done:
+            self._prune_chunk_graph(cur_chunk_graph, chunk_result_keys)
 
     # @log_unhandled
     # def prepare_graph(self, compose=True):
