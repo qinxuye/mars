@@ -284,16 +284,16 @@ class ChunkGraphBuilder(GraphBuilder):
         if tileable_data in cache:
             return [cache[o] for o in tileable_data.op.outputs]
 
+        # copy tileable
+        op = tileable_data.op.copy()
+        tds = op.new_tileables([cache[inp] for inp in tileable_data.inputs],
+                               kws=[o.params for o in tileable_data.op.outputs],
+                               output_limit=len(tileable_data.op.outputs),
+                               **tileable_data.extra_params)
         if on_tile is None:
-            # copy tileable
-            op = tileable_data.op.copy()
-            tds = op.new_tileables([cache[inp] for inp in tileable_data.inputs],
-                                   kws=[o.params for o in tileable_data.op.outputs],
-                                   output_limit=len(tileable_data.op.outputs),
-                                   **tileable_data.extra_params)
             tds[0].single_tiles()
         else:
-            tds = on_tile(tileable_data)
+            tds = on_tile(tds)
             if not isinstance(tds, (list, tuple)):
                 tds = [tds]
             assert len(tileable_data.op.outputs) == len(tds)
