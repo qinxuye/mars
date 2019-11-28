@@ -253,6 +253,7 @@ class TileableGraphBuilder(GraphBuilder):
                                                    node_processor=node_processor,
                                                    inputs_selector=inputs_selector)
 
+    @kernel_mode
     @enter_build_mode
     def build(self, tileables, tileable_graph=None):
         if tileable_graph is not None:  # pragma: no cover
@@ -315,6 +316,7 @@ class ChunkGraphBuilder(GraphBuilder):
             tileable_graph = tileable_graph_builder.build(tileables)
         return tileable_graph
 
+    @kernel_mode
     @enter_build_mode
     def build(self, tileables, tileable_graph=None):
         tileable_graph = self._get_tileable_data_graph(tileables, tileable_graph)
@@ -415,6 +417,7 @@ class IterativeChunkGraphBuilder(ChunkGraphBuilder):
             raise TilesFail('Tile fail due to failure of inputs')
         return super(IterativeChunkGraphBuilder, self)._tile(tileable_data)
 
+    @kernel_mode
     @enter_build_mode
     def build(self, tileables, tileable_graph=None):
         tileable_graph = self._get_tileable_data_graph(tileables, tileable_graph)

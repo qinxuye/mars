@@ -403,7 +403,7 @@ class GraphActor(SchedulerActor):
 
         try:
             chunk_graph = self.get_chunk_graph()
-        except (KeyError, GraphNotExists):
+        except (KeyError, GraphNotExists, AttributeError):
             self.state = GraphState.CANCELLED
             return
 
@@ -508,7 +508,7 @@ class GraphActor(SchedulerActor):
                 marked.add(c)
             elif any(inp in marked for inp in reverse_chunk_graph.iter_predecessors(c)):
                 marked.add(c)
-        for n in chunk_graph:
+        for n in list(chunk_graph):
             if n not in marked:
                 chunk_graph.remove_node(n)
 
@@ -550,7 +550,7 @@ class GraphActor(SchedulerActor):
                     return
                 else:
                     tileable_key_opid_to_tiled[(tiled_before.key, tiled_before.op.id)].append(tiled_after)
-                    is_target_tileable = tiled_before in target_tileables_set
+                    is_target_tileable = tiled_before.key in self._target_tileable_chunk_ops
                     for c in tiled_after.chunks:
                         if is_target_tileable:
                             chunk_result_keys.add(c.key)
@@ -583,10 +583,10 @@ class GraphActor(SchedulerActor):
             cur_chunk_graph = chunk_graph_builder.build(
                 self._tileables, tileable_graph=to_run_tileable_graph)
 
-        self._gen_op_key_to_chunk(cur_chunk_graph)
-        self._merge_chunk_graph(chunk_graph, cur_chunk_graph)
         if chunk_graph_builder.done:
             self._prune_chunk_graph(cur_chunk_graph, chunk_result_keys)
+        self._gen_op_key_to_chunk(cur_chunk_graph)
+        self._merge_chunk_graph(chunk_graph, cur_chunk_graph)
 
     def _get_worker_slots(self):
         metrics = self._resource_actor_ref.get_workers_meta()

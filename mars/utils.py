@@ -30,6 +30,7 @@ import time
 import zlib
 import threading
 import itertools
+import weakref
 
 import numpy as np
 import pandas as pd
@@ -358,43 +359,6 @@ def log_unhandled(func):
     return _wrapped
 
 
-def build_tileable_graph(tileables, executed_tileable_keys, graph=None):
-    from .tiles import TileableGraphBuilder
-
-    with build_mode():
-        node_to_copy = dict()
-        node_to_fetch = dict()
-        copied = set()
-
-        def replace_with_fetch_or_copy(n):
-            n = n.data if hasattr(n, 'data') else n
-            if n in copied:
-                return n
-            if n.key in executed_tileable_keys:
-                if n not in node_to_fetch:
-                    c = node_to_copy[n] = node_to_fetch[n] = build_fetch(n).data
-                    copied.add(c)
-                return node_to_fetch[n]
-            if n not in node_to_copy:
-                copy_op = n.op.copy()
-                params = []
-                for o in n.op.outputs:
-                    p = o.params.copy()
-                    p.update(o.extra_params)
-                    p['_key'] = o.key
-                    params.append(p)
-                copies = copy_op.new_tileables([replace_with_fetch_or_copy(inp) for inp in n.inputs],
-                                               kws=params, output_limit=len(params))
-                for o, copy in zip(n.op.outputs, copies):
-                    node_to_copy[o] = copy.data
-                    copied.add(copy.data)
-            return node_to_copy[n]
-
-        tileable_graph_builder = TileableGraphBuilder(
-            graph=graph, node_processor=replace_with_fetch_or_copy)
-        return tileable_graph_builder.build(tileables)
-
-
 _kernel_mode = threading.local()
 
 
@@ -425,6 +389,43 @@ def kernel_mode(func):
                 _kernel_mode.eager = None
 
     return _wrapped
+
+
+def build_tileable_graph(tileables, executed_tileable_keys, graph=None):
+    from .tiles import TileableGraphBuilder
+
+    with build_mode():
+        node_to_copy = weakref.WeakKeyDictionary()
+        node_to_fetch = weakref.WeakKeyDictionary()
+        copied = weakref.WeakSet()
+
+        def replace_with_fetch_or_copy(n):
+            n = n.data if hasattr(n, 'data') else n
+            if n in copied:
+                return n
+            if n.key in executed_tileable_keys:
+                if n not in node_to_fetch:
+                    c = node_to_copy[n] = node_to_fetch[n] = build_fetch(n).data
+                    copied.add(c)
+                return node_to_fetch[n]
+            if n not in node_to_copy:
+                copy_op = n.op.copy()
+                params = []
+                for o in n.op.outputs:
+                    p = o.params.copy()
+                    p.update(o.extra_params)
+                    p['_key'] = o.key
+                    params.append(p)
+                copies = copy_op.new_tileables([replace_with_fetch_or_copy(inp) for inp in n.inputs],
+                                               kws=params, output_limit=len(params))
+                for o, copy in zip(n.op.outputs, copies):
+                    node_to_copy[o] = copy.data
+                    copied.add(copy.data)
+            return node_to_copy[n]
+
+        tileable_graph_builder = TileableGraphBuilder(
+            graph=graph, node_processor=replace_with_fetch_or_copy)
+        return tileable_graph_builder.build(tileables)
 
 
 _build_mode = threading.local()
