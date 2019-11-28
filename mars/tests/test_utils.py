@@ -146,58 +146,50 @@ class Test(unittest.TestCase):
         self.assertEqual(utils.tokenize(CustomizedTokenize()),
                          utils.tokenize(CustomizedTokenize()))
 
-    def testBuildGraph(self):
+    def testBuildTileableGraph(self):
         a = mt.ones((10, 10), chunk_size=8)
         b = mt.ones((10, 10), chunk_size=8)
         c = (a + 1) * 2 + b
 
-        graph = utils.build_graph([c])
+        graph = utils.build_tileable_graph([c], set())
         self.assertEqual(len(graph), 5)
-        self.assertIn(a.data, graph)
-        self.assertIn(b.data, graph)
-        self.assertEqual(graph.count_successors(a.data), 1)
-        self.assertEqual(graph.count_predecessors(a.data), 0)
-        self.assertEqual(graph.count_successors(c.data), 0)
-        self.assertEqual(graph.count_predecessors(c.data), 2)
+        a_data = next(n for n in graph if n.key == a.key)
+        self.assertEqual(graph.count_successors(a_data), 1)
+        self.assertEqual(graph.count_predecessors(a_data), 0)
+        c_data = next(n for n in graph if n.key == c.key)
+        self.assertEqual(graph.count_successors(c_data), 0)
+        self.assertEqual(graph.count_predecessors(c_data), 2)
 
-        graph = utils.build_graph([a, b, c])
+        graph = utils.build_tileable_graph([a, b, c], set())
         self.assertEqual(len(graph), 5)
-
-        graph = utils.build_graph([a, b, c], graph=graph)
-        self.assertEqual(len(graph), 5)
-
-        graph = utils.build_graph([c], tiled=True, compose=False)
-        self.assertEqual(len(graph), 20)
-
-        graph = utils.build_graph([c], tiled=True)
-        self.assertEqual(len(graph), 12)
 
         # test fetch replacement
         a = mt.ones((10, 10), chunk_size=8)
         b = mt.ones((10, 10), chunk_size=8)
         c = (a + 1) * 2 + b
-        executed_keys = [a.key, b.key]
+        executed_keys = {a.key, b.key}
 
-        graph = utils.build_graph([c], executed_keys=executed_keys)
+        graph = utils.build_tileable_graph([c], executed_keys)
         self.assertEqual(len(graph), 5)
         self.assertNotIn(a.data, graph)
         self.assertNotIn(b.data, graph)
         self.assertTrue(any(isinstance(n.op, TensorFetch) for n in graph))
-        self.assertEqual(graph.count_successors(c.data), 0)
-        self.assertEqual(graph.count_predecessors(c.data), 2)
+        c_data = next(n for n in graph if n.key == c.key)
+        self.assertEqual(graph.count_successors(c_data), 0)
+        self.assertEqual(graph.count_predecessors(c_data), 2)
 
-        executed_keys = [(a + 1).key]
-        graph = utils.build_graph([c], executed_keys=executed_keys)
+        executed_keys = {(a + 1).key}
+        graph = utils.build_tileable_graph([c], executed_keys)
         self.assertTrue(any(isinstance(n.op, TensorFetch) for n in graph))
         self.assertEqual(len(graph), 4)
 
-        executed_keys = [((a + 1) * 2).key]
-        graph = utils.build_graph([c], executed_keys=executed_keys)
+        executed_keys = {((a + 1) * 2).key}
+        graph = utils.build_tileable_graph([c], executed_keys)
         self.assertTrue(any(isinstance(n.op, TensorFetch) for n in graph))
         self.assertEqual(len(graph), 3)
 
-        executed_keys = [c.key]
-        graph = utils.build_graph([c], executed_keys=executed_keys)
+        executed_keys = {c.key}
+        graph = utils.build_tileable_graph([c], executed_keys)
         self.assertTrue(any(isinstance(n.op, TensorFetch) for n in graph))
         self.assertEqual(len(graph), 1)
 

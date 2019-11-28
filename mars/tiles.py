@@ -286,10 +286,14 @@ class ChunkGraphBuilder(GraphBuilder):
 
         # copy tileable
         op = tileable_data.op.copy()
+        params = []
+        for o in tileable_data.op.outputs:
+            p = o.params.copy()
+            p.update(o.extra_params)
+            p['_key'] = o.key
+            params.append(p)
         tds = op.new_tileables([cache[inp] for inp in tileable_data.inputs],
-                               kws=[o.params for o in tileable_data.op.outputs],
-                               output_limit=len(tileable_data.op.outputs),
-                               **tileable_data.extra_params)
+                               kws=params, output_limit=len(params))
         if on_tile is None:
             tds[0].single_tiles()
         else:
@@ -298,7 +302,7 @@ class ChunkGraphBuilder(GraphBuilder):
                 tds = [tds]
             assert len(tileable_data.op.outputs) == len(tds)
         for t, td in zip(tileable_data.op.outputs, tds):
-            cache[t] = td.data
+            cache[t] = td.data if hasattr(td, 'data') else td
         return tds
 
     def _get_tileable_data_graph(self, tileables, tileable_graph):
