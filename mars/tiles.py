@@ -355,15 +355,15 @@ class ChunkGraphBuilder(GraphBuilder):
 
 
 class IterativeChunkGraphBuilder(ChunkGraphBuilder):
-    def __init__(self, graph=None, graph_cls=DAG, node_processor=None, compose=True,
-                 on_tile=None, on_tile_success=None, on_tile_failure=None):
+    def __init__(self, graph=None, graph_cls=DAG, node_processor=None, inputs_selector=None,
+                 compose=True, on_tile=None, on_tile_success=None, on_tile_failure=None):
         self._failed_ops = set()
         self._prev_tileable_graph = None
         self._iterative_chunk_graphs = []
         self._done = False
         super(IterativeChunkGraphBuilder, self).__init__(
             graph=graph, graph_cls=graph_cls, node_processor=node_processor,
-            compose=compose, on_tile=on_tile,
+            inputs_selector=inputs_selector, compose=compose, on_tile=on_tile,
             on_tile_success=self._wrap_on_tile_success(on_tile_success),
             on_tile_failure=self._wrap_on_tile_failure(on_tile_failure))
         if self._graph_cls is None:

@@ -491,7 +491,10 @@ class GraphActor(SchedulerActor):
                 if inp in chunk_graph:
                     chunk_graph.add_edge(inp, update_c)
                 elif isinstance(inp.op, Fetch):
-                    inp = chunk_key_id_to_chunk[inp.key, inp.id]
+                    if (inp.key, inp.id) in chunk_key_id_to_chunk:
+                        inp = chunk_key_id_to_chunk[inp.key, inp.id]
+                    else:
+                        chunk_graph.add_node(inp)
                     chunk_graph.add_edge(inp, update_c)
         return chunk_graph
 
@@ -558,7 +561,8 @@ class GraphActor(SchedulerActor):
 
             self._chunk_graph_builder = IterativeChunkGraphBuilder(
                 on_tile=on_tile, compose=compose,
-                on_tile_success=on_tile_success)
+                on_tile_success=on_tile_success,
+                inputs_selector=lambda inps: [inp for inp in inps if not isinstance(inp.op, Fetch)])
 
         chunk_graph_builder = self._chunk_graph_builder
         if chunk_graph_builder.prev_tileable_graph is None:
