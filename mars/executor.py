@@ -678,7 +678,6 @@ class Executor(object):
 
         result_keys = []
         to_release_keys = []
-        concat_keys = []
         tileable_data_key_to_chunk_keys = dict()
 
         executed_keys = set(chunk_result)
@@ -709,12 +708,8 @@ class Executor(object):
                 after_tile_data = after_tile_data.op.concat_tileable_chunks(after_tile_data)
                 chunk = after_tile_data.chunks[0]
                 result_keys.append(chunk.key)
-                # the concatenated key
-                concat_keys.append(chunk.key)
                 # after return the data to user, we release the reference
                 to_release_keys.append(chunk.key)
-            else:
-                concat_keys.append(after_tile_data.chunks[0].key)
             return after_tile_data
 
         # build tileable graph
@@ -770,6 +765,7 @@ class Executor(object):
                 self.stored_tileables[tileable.key] = tuple([{tileable.id}, set(chunk_keys)])
         try:
             if fetch:
+                concat_keys = [get_tiled(t).chunks[0].key for t in tileables]
                 return [chunk_result[k] for k in concat_keys]
             else:
                 return
