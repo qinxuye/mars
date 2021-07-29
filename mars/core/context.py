@@ -92,7 +92,8 @@ class Context(ABC):
 
     @abstractmethod
     def get_chunks_result(self,
-                          data_keys: List[str]) -> List:
+                          data_keys: List[str],
+                          conditions: list) -> List:
         """
         Get result of chunks.
 
@@ -100,6 +101,8 @@ class Context(ABC):
         ----------
         data_keys : list
             Data keys.
+        conditions : list
+            Condition to filter out data for each data.
 
         Returns
         -------

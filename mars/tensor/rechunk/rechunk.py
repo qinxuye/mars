@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import itertools
+from typing import Union
 
 import numpy as np
 
 from ... import opcodes as OperandDef
-from ...serialization.serializables import KeyField, AnyField, Int32Field, Int64Field
+from ...core.context import Context
+from ...serialization.serializables import FieldTypes, KeyField, AnyField, \
+    Int32Field, Int64Field, ListField
 from ...utils import has_unknown_shape
 from ..utils import calc_sliced_size
 from ..operands import TensorHasInput, TensorOperandMixin
@@ -32,6 +35,9 @@ class TensorRechunk(TensorHasInput, TensorOperandMixin):
     _chunk_size = AnyField('chunk_size')
     _threshold = Int32Field('threshold')
     _chunk_size_limit = Int64Field('chunk_size_limit')
+    # for chunk
+    input_chunk_size = ListField('input_chunk_size', FieldTypes.int64)
+    input_chunk_slices = ListField('input_chunk_slices')
 
     def __init__(self, chunk_size=None, threshold=None, chunk_size_limit=None, **kw):
         super().__init__(_chunk_size=chunk_size, _threshold=threshold,
@@ -61,28 +67,96 @@ class TensorRechunk(TensorHasInput, TensorOperandMixin):
         return self.new_tensor([tensor], tensor.shape, order=tensor.order)
 
     @classmethod
-    def tile(cls, op):
+    def tile(cls, op: "TensorRechunk"):
         if has_unknown_shape(*op.inputs):
             yield
 
+        out = op.outputs[0]
         tensor = astensor(op.input)
         chunk_size = get_nsplits(tensor, op.chunk_size, tensor.dtype.itemsize)
         if chunk_size == tensor.nsplits:
             return [tensor]
 
-        new_chunk_size = chunk_size
-        steps = plan_rechunks(op.inputs[0], new_chunk_size, op.inputs[0].dtype.itemsize,
-                              threshold=op.threshold,
-                              chunk_size_limit=op.chunk_size_limit)
-        tensor = op.outputs[0]
-        for c in steps:
-            tensor = compute_rechunk(tensor.inputs[0], c)
+        cum_in_nsplits = [np.cumsum(ns) for ns in tensor.nsplits]
+        cum_out_nsplits = [np.cumsum(ns) for ns in chunk_size]
+        out_starts = [[0] + cum_ns[:-1].tolist() for cum_ns in cum_out_nsplits]
+        out_ends = cum_out_nsplits
+        out_start_indexes = [np.searchsorted(cum_ns, starts) for cum_ns, starts
+                             in zip(cum_in_nsplits, out_starts)]
+        out_end_indexes = [np.searchsorted(cum_ns, ends) for cum_ns, ends
+                           in zip(cum_in_nsplits, out_ends)]
 
-        if op.reassign_worker:
-            for c in tensor.chunks:
-                c.op.reassign_worker = True
+        chunk_index_iter = itertools.product(*(range(len(s)) for s in chunk_size))
+        out_chunks = []
+        for chunk_index in chunk_index_iter:
+            shape = tuple(chunk_size[dim][i] for dim, i in enumerate(chunk_index))
+            inp_chunk_slices = [list() for _ in range(len(chunk_index))]
+            inp_chunk_indexes = [list() for _ in range(len(chunk_index))]
+            for dim, i in enumerate(chunk_index):
+                size_start = out_starts[dim][i]
+                size_end = out_ends[dim][i]
+                start_index = out_start_indexes[dim][i]
+                end_index = out_end_indexes[dim][i]
+                for inp_i in range(start_index, end_index + 1):
+                    inp_start = cum_in_nsplits[dim][inp_i - 1] if inp_i > 0 else 0
+                    inp_end = cum_in_nsplits[dim][inp_i]
+                    slice_start = max(inp_start, size_start) - inp_start
+                    slice_end = min(inp_end, size_end) - inp_start
+                    inp_chunk_slices[dim].append(slice(slice_start, slice_end))
+                    inp_chunk_indexes[dim].append(inp_i)
 
-        return [tensor]
+            inp_chunks = []
+            slices = []
+            for inp_chunk_index, inp_chunk_slice in zip(itertools.product(*inp_chunk_indexes),
+                                                        itertools.product(*inp_chunk_slices)):
+                inp_chunks.append(tensor.cix[tuple(inp_chunk_index)])
+                slices.append(inp_chunk_slice)
+
+            chunk_op = op.copy().reset_key()
+            chunk_op.input_chunk_size = [len(it) for it in inp_chunk_slices]
+            chunk_op.input_chunk_slices = slices
+            chunk_op._pure_depends = [False] * len(inp_chunks)
+            out_chunk = chunk_op.new_chunk(inp_chunks, shape=shape,
+                                           index=chunk_index, order=out.order)
+            out_chunks.append(out_chunk)
+
+        new_op = op.copy()
+        params = out.params
+        params['nsplits'] = chunk_size
+        params['chunks'] = out_chunks
+        return new_op.new_tileables(op.inputs, kws=[params])
+
+    @classmethod
+    def execute(cls, ctx: Union[dict, Context], op: "TensorRechunk"):
+        input_keys = [inp.key for inp in op.inputs]
+        data = ctx.get_chunks_result(input_keys, conditions=op.input_chunk_slices)
+        block = np.empty(op.input_chunk_size, dtype=object)
+        block.ravel()[:] = data
+        ctx[op.outputs[0].key] = np.block(block.tolist())
+
+    # @classmethod
+    # def tile(cls, op):
+    #     if has_unknown_shape(*op.inputs):
+    #         yield
+    #
+    #     tensor = astensor(op.input)
+    #     chunk_size = get_nsplits(tensor, op.chunk_size, tensor.dtype.itemsize)
+    #     if chunk_size == tensor.nsplits:
+    #         return [tensor]
+    #
+    #     new_chunk_size = chunk_size
+    #     steps = plan_rechunks(op.inputs[0], new_chunk_size, op.inputs[0].dtype.itemsize,
+    #                           threshold=op.threshold,
+    #                           chunk_size_limit=op.chunk_size_limit)
+    #     tensor = op.outputs[0]
+    #     for c in steps:
+    #         tensor = compute_rechunk(tensor.inputs[0], c)
+    #
+    #     if op.reassign_worker:
+    #         for c in tensor.chunks:
+    #             c.op.reassign_worker = True
+    #
+    #     return [tensor]
 
 
 def rechunk(tensor, chunk_size, threshold=None, chunk_size_limit=None,
