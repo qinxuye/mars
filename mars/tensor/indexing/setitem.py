@@ -20,6 +20,7 @@ from ... import opcodes as OperandDef
 from ...core import ENTITY_TYPE, recursive_tile
 from ...serialization.serializables import KeyField, TupleField, AnyField
 from ...tensor import tensor as astensor
+from ...typing import TileableType
 from ...utils import has_unknown_shape
 from ..core import TENSOR_TYPE
 from ..operands import TensorHasInput, TensorOperandMixin
@@ -69,7 +70,7 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
         return new_op.new_tensor(new_inputs, shape=self.outputs[0].shape)
 
     @classmethod
-    def tile(cls, op: "TensorIndexSetValue"):
+    def _tile_no_fancy_index(cls, op: "TensorIndexSetValue"):
         from ..base import broadcast_to
         from .getitem import _getitem_nocheck
 
@@ -117,6 +118,21 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
                                   chunks=out_chunks, nsplits=op.input.nsplits)
 
     @classmethod
+    def _tile_fancy_index(cls, op: "TensorIndexSetValue"):
+        out = op.outputs[0]
+        value = op.value
+        indexes = None
+
+    @classmethod
+    def tile(cls, op: "TensorIndexSetValue"):
+        if any(isinstance(ind, TENSOR_TYPE) and ind.dtype.kind != 'b'
+               for ind in op.indexes):
+            # fancy index exists
+            return (yield from cls._tile_fancy_index(op))
+        else:
+            return (yield from cls._tile_no_fancy_index(op))
+
+    @classmethod
     def execute(cls, ctx, op):
         indexes = [ctx[index.key] if hasattr(index, 'key') else index
                    for index in op.indexes]
@@ -128,24 +144,11 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
         ctx[op.outputs[0].key] = input_
 
 
-def _check_support(index):
-    if isinstance(index, (slice, Integral)):
-        pass
-    elif isinstance(index, (np.ndarray, TENSOR_TYPE)) and index.dtype == np.bool_:
-        pass
-    else:  # pragma: no cover
-        raise NotImplementedError('Only slice, int, or bool indexing '
-                                  f'supported by now, got {type(index)}')
-
-
-def _setitem(a, item, value):
+def _setitem(a: TileableType, item, value):
     index = process_index(a.ndim, item, convert_bool_to_fancy=False)
     if not (np.isscalar(value) or (isinstance(value, tuple) and a.dtype.fields)):
         # do not convert for tuple when dtype is record type.
         value = astensor(value)
-
-    for ix in index:
-        _check_support(ix)
 
     # __setitem__ on a view should be still a view, see GH #732.
     op = TensorIndexSetValue(dtype=a.dtype, sparse=a.issparse(),
