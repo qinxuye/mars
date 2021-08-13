@@ -70,14 +70,16 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
         return new_op.new_tensor(new_inputs, shape=self.outputs[0].shape)
 
     @classmethod
-    def _tile_no_fancy_index(cls, op: "TensorIndexSetValue"):
+    def _process_params(cls,
+                        op: "TensorIndexSetValue",
+                        convert_bool_to_fancy: bool):
         from ..base import broadcast_to
         from .getitem import _getitem_nocheck
 
-        tensor = op.outputs[0]
         value = op.value
         indexed = yield from recursive_tile(
-            _getitem_nocheck(op.input, op.indexes, convert_bool_to_fancy=False))
+            _getitem_nocheck(op.input, op.indexes,
+                             convert_bool_to_fancy=convert_bool_to_fancy))
         is_value_tensor = isinstance(value, TENSOR_TYPE)
 
         if is_value_tensor and value.ndim > 0:
@@ -88,6 +90,14 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
                 broadcast_to(value, indexed.shape).astype(op.input.dtype, copy=False))
             nsplits = indexed.nsplits
             value = yield from recursive_tile(value.rechunk(nsplits))
+
+        return indexed, value
+
+    @classmethod
+    def _tile_no_fancy_index(cls, op: "TensorIndexSetValue"):
+        tensor = op.outputs[0]
+        is_value_tensor = isinstance(op.value, TENSOR_TYPE)
+        indexed, value = yield from cls._process_params(op, False)
 
         chunk_mapping = {c.op.input.index: c for c in indexed.chunks}
         out_chunks = []
@@ -120,8 +130,8 @@ class TensorIndexSetValue(TensorHasInput, TensorOperandMixin):
     @classmethod
     def _tile_fancy_index(cls, op: "TensorIndexSetValue"):
         out = op.outputs[0]
-        value = op.value
-        indexes = None
+        indexed, value = yield from cls._process_params(op, True)
+
 
     @classmethod
     def tile(cls, op: "TensorIndexSetValue"):
