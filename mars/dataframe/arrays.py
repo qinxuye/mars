@@ -58,6 +58,7 @@ from ..utils import pd_release_version, tokenize
 
 _use_bool_any_all = pd_release_version[:2] >= (1, 3)
 _use_extension_index = pd_release_version[:2] >= (1, 4)
+_DICTIONARY_ENCODE_SAMPLE_COUNT = 100
 
 
 class ArrowDtype(ExtensionDtype):
@@ -222,14 +223,28 @@ class ArrowListDtype(ArrowDtype):
 class ArrowArray(ExtensionArray):
     _arrow_type = None
 
-    def __init__(self, values, dtype: ArrowDtype = None, copy=False):
+    def __init__(
+        self,
+        values,
+        dtype: ArrowDtype = None,
+        copy: bool = False,
+        dictionary_encode: bool = None,
+    ):
         pandas_only = self._pandas_only()
+        self.dictionary_encode = dictionary_encode
 
         if pa is not None and not pandas_only:
-            self._init_by_arrow(values, dtype=dtype, copy=copy)
+            self._init_by_arrow(
+                values, dtype=dtype, copy=copy, dictionary_encode=dictionary_encode
+            )
         elif not is_kernel_mode():
             # not in kernel mode, allow to use numpy handle data
             # just for infer dtypes purpose
+            if not pandas_only and dictionary_encode is not None:  # pragma: no cover
+                raise ValueError(
+                    "ArrowArray init with numpy array "
+                    "cannot accept ditionary_encode argument"
+                )
             self._init_by_numpy(values, dtype=dtype, copy=copy)
         else:
             raise ImportError("Cannot create ArrowArray when `pyarrow` not installed")
@@ -237,7 +252,13 @@ class ArrowArray(ExtensionArray):
         # for test purpose
         self._force_use_pandas = pandas_only
 
-    def _init_by_arrow(self, values, dtype: ArrowDtype = None, copy=False):
+    def _init_by_arrow(
+        self,
+        values,
+        dtype: ArrowDtype = None,
+        copy: bool = False,
+        dictionary_encode: bool = None,
+    ):
         if isinstance(values, (pd.Index, pd.Series)):
             # for pandas Index and Series,
             # convert to PandasArray
@@ -245,6 +266,11 @@ class ArrowArray(ExtensionArray):
 
         if isinstance(values, type(self)):
             arrow_array = values._arrow_array
+            dictionary_encode = (
+                values.dictionary_encode
+                if dictionary_encode is None
+                else dictionary_encode
+            )
         elif isinstance(values, ExtensionArray):
             # if come from pandas object like index,
             # convert to pandas StringArray first,
@@ -257,6 +283,10 @@ class ArrowArray(ExtensionArray):
         else:
             arrow_array = pa.chunked_array([pa.array(values, type=dtype.arrow_type)])
 
+        if dictionary_encode in (None, True):
+            arrow_array = self._apply_dictionary_encode_if_possible(
+                arrow_array, dictionary_encode
+            )
         if copy:
             arrow_array = copy_obj(arrow_array)
 
@@ -268,10 +298,44 @@ class ArrowArray(ExtensionArray):
         else:
             self._dtype = dtype
 
+    @staticmethod
+    def _is_dictionary_encoded(array: "pa.Array") -> bool:
+        return isinstance(array.type, pa.DictionaryType)
+
+    def _apply_dictionary_encode_if_possible(
+        self, arrow_array: "pa.ChunkedArray", dictionary_encode: bool
+    ) -> "pa.ChunkedArray":
+        if arrow_array.chunks:
+            if self._is_dictionary_encoded(arrow_array.chunks[0]):
+                # already dictionary encoded
+                self.dictionary_encode = True
+                return arrow_array
+        if dictionary_encode:
+            return arrow_array.dictionary_encode()
+        else:
+            # detect if apply dictionary encode
+            size = arrow_array.length()
+            if size <= _DICTIONARY_ENCODE_SAMPLE_COUNT:
+                return arrow_array
+            sample_index = np.random.randint(size, size=_DICTIONARY_ENCODE_SAMPLE_COUNT)
+            sampled_array: pa.ChunkedArray = arrow_array.take(sample_index)
+            sampled_encoded_array = sampled_array.dictionary_encode()
+            if sampled_encoded_array.nbytes < sampled_array.nbytes:
+                self.dictionary_encode = True
+                return arrow_array.dictionary_encode()
+            else:
+                return arrow_array
+
     def _init_by_numpy(self, values, dtype: ArrowDtype = None, copy=False):
         self._use_arrow = False
 
-        ndarray = np.array(values, copy=copy)
+        if pa and isinstance(values, pa.ChunkedArray):
+            # for pyarrow chunked array within chunk is dictionary encoded
+            # the null value will be ignored when directly calling to_numpy
+            # so we convert to pandas first
+            ndarray = values.to_pandas().to_numpy()
+        else:
+            ndarray = np.array(values, copy=copy)
         if NDArrayBacked is not None and isinstance(self, NDArrayBacked):
             NDArrayBacked.__init__(self, ndarray, dtype)
         else:
@@ -396,7 +460,7 @@ class ArrowArray(ExtensionArray):
             if pd.api.types.is_scalar(item):
                 return result
             else:
-                return type(self)(result)
+                return cls(result)
 
         has_take = hasattr(self._arrow_array, "take")
         if not self._force_use_pandas and has_take:
@@ -411,16 +475,22 @@ class ArrowArray(ExtensionArray):
                 return cls(
                     self._arrow_array.slice(offset=start, length=stop - start),
                     dtype=self._dtype,
+                    dictionary_encode=self.dictionary_encode,
                 )
             elif hasattr(item, "dtype") and np.issubdtype(item.dtype, np.bool_):
                 return cls(
                     self._arrow_array.filter(pa.array(item, from_pandas=True)),
                     dtype=self._dtype,
+                    dictionary_encode=self.dictionary_encode,
                 )
             elif hasattr(item, "dtype"):
                 length = len(self)
                 item = np.where(item < 0, item + length, item)
-                return cls(self._arrow_array.take(item), dtype=self._dtype)
+                return cls(
+                    self._arrow_array.take(item),
+                    dtype=self._dtype,
+                    dictionary_encode=self.dictionary_encode,
+                )
 
         array = np.asarray(self._arrow_array.to_pandas())
         return cls(array[item], dtype=self._dtype)
@@ -436,6 +506,9 @@ class ArrowArray(ExtensionArray):
         )
         if len(chunks) == 0:
             chunks = [pa.array([], type=to_concat[0].dtype.arrow_type)]
+        if any(cls._is_dictionary_encoded(c) for c in chunks):
+            # if any chunk is dictionary encoded, convert all to dictionary encode
+            chunks = [c.dictionary_encode() for c in chunks]
         return cls(pa.chunked_array(chunks))
 
     def __len__(self):
@@ -457,7 +530,18 @@ class ArrowArray(ExtensionArray):
 
     @classmethod
     def _array_fillna(cls, array, value):
-        return array.fillna(value)
+        try:
+            return array.fillna(value)
+        except TypeError:
+            if (
+                pd.api.types.is_categorical_dtype(array)
+                and value not in array.dtype.categories
+            ):
+                # add value first
+                array = array.cat.add_categories(value)
+                return array.fillna(value)
+            else:  # pragma: no cover
+                raise
 
     def fillna(self, value=None, method=None, limit=None):
         cls = type(self)
@@ -478,7 +562,11 @@ class ArrowArray(ExtensionArray):
             else:
                 result_array = array.fillna(value=value, method=method, limit=limit)
             chunks.append(pa.array(result_array, from_pandas=True))
-        return cls(pa.chunked_array(chunks), dtype=self._dtype)
+        return cls(
+            pa.chunked_array(chunks),
+            dtype=self._dtype,
+            dictionary_encode=self.dictionary_encode,
+        )
 
     def astype(self, dtype, copy=True):
         dtype = pandas_dtype(dtype)
@@ -536,7 +624,11 @@ class ArrowArray(ExtensionArray):
         if (
             allow_fill is False or (allow_fill and fill_value is self.dtype.na_value)
         ) and len(self) > 0:
-            return type(self)(self[indices], dtype=self._dtype)
+            return type(self)(
+                self[indices],
+                dtype=self._dtype,
+                dictionary_encode=self.dictionary_encode,
+            )
 
         if self._use_arrow:
             array = self._arrow_array.to_pandas().to_numpy()
@@ -553,11 +645,15 @@ class ArrowArray(ExtensionArray):
         if replace and pa is not None:
             # pyarrow cannot recognize pa.NULL
             result[result == self.dtype.na_value] = None
-        return type(self)(result, dtype=self._dtype)
+        return type(self)(
+            result, dtype=self._dtype, dictionary_encode=self.dictionary_encode
+        )
 
     def copy(self):
         if self._use_arrow:
-            return type(self)(copy_obj(self._arrow_array))
+            return type(self)(
+                copy_obj(self._arrow_array), dictionary_encode=self.dictionary_encode
+            )
         else:
             return type(self)(self._ndarray.copy())
 
@@ -599,10 +695,22 @@ class ArrowArray(ExtensionArray):
 
 
 class ArrowStringArray(ArrowArray, StringArrayBase):
-    def __init__(self, values, dtype=None, copy=False):
+    def __init__(
+        self,
+        values,
+        dtype: ArrowStringDtype = None,
+        copy: bool = False,
+        dictionary_encode: bool = None,
+    ):
         if dtype is not None:
             assert isinstance(dtype, ArrowStringDtype)
-        ArrowArray.__init__(self, values, ArrowStringDtype(), copy=copy)
+        ArrowArray.__init__(
+            self,
+            values,
+            ArrowStringDtype(),
+            copy=copy,
+            dictionary_encode=dictionary_encode,
+        )
 
     @classmethod
     def from_scalars(cls, values):
@@ -645,7 +753,9 @@ class ArrowStringArray(ArrowArray, StringArrayBase):
         if self._use_arrow:
             string_array = np.asarray(self._arrow_array.to_pandas())
             string_array[key] = value
-            self._arrow_array = pa.chunked_array([pa.array(string_array)])
+            self._arrow_array = self._apply_dictionary_encode_if_possible(
+                pa.chunked_array([pa.array(string_array)]), self.dictionary_encode
+            )
         else:
             self._ndarray[key] = value
 
@@ -749,7 +859,13 @@ ArrowStringArray._add_comparison_ops()
 
 
 class ArrowListArray(ArrowArray):
-    def __init__(self, values, dtype: ArrowListDtype = None, copy=False):
+    def __init__(
+        self,
+        values,
+        dtype: ArrowListDtype = None,
+        copy: bool = False,
+        dictionary_encode: bool = None,
+    ):
         if dtype is None:
             if isinstance(values, type(self)):
                 dtype = values.dtype
@@ -768,7 +884,9 @@ class ArrowListArray(ArrowArray):
                 value_type = np.asarray(values[0]).dtype
                 dtype = ArrowListDtype(value_type)
 
-        super().__init__(values, dtype=dtype, copy=copy)
+        super().__init__(
+            values, dtype=dtype, copy=copy, dictionary_encode=dictionary_encode
+        )
 
     def to_numpy(self, dtype=None, copy=False, na_value=lib.no_default):
         if self._use_arrow:

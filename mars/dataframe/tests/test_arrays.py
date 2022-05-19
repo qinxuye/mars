@@ -147,180 +147,180 @@ def test_arrow_list_array_creation():
 
 
 @pytest.mark.skipif(pa is None, reason="pyarrow not installed")
-def test_arrow_string_array_functions():
-    lst = np.array(["abc", "de", "eee", "中文"], dtype=object)
+@pytest.mark.parametrize(
+    "lst",
+    [
+        np.array(["abc", "de", "eee", "中文"], dtype=object),
+        np.array(["中文", "中文2", "中文3"] * 100, dtype=object),  # dictionary encoding
+    ],
+)
+@pytest.mark.parametrize("pandas_only", [False, True])
+def test_arrow_string_array_functions(lst, pandas_only):
     # leverage string array to get the right answer
     string_array = pd.arrays.StringArray(lst)
-    has_na_arrow_array = ArrowStringArray(["abc", None, "eee", "中文"])
-    has_na_string_array = pd.arrays.StringArray(
-        np.array(["abc", pd.NA, "eee", "中文"], dtype=object)
-    )
+    na_lst = lst.tolist()
+    na_lst[1] = None
+    has_na_arrow_array = ArrowStringArray(na_lst)
+    lst2 = lst.copy()
+    lst2[1] = pd.NA
+    has_na_string_array = pd.arrays.StringArray(lst2)
 
-    for pandas_only in [False, True]:
-        with option_context({"dataframe.arrow_array.pandas_only": pandas_only}):
-            arrow_array = ArrowStringArray(lst)
+    with option_context({"dataframe.arrow_array.pandas_only": pandas_only}):
+        arrow_array = ArrowStringArray(lst)
 
-            # getitem, scalar
-            assert arrow_array[1] == string_array[1]
-            assert arrow_array[-1] == string_array[-1]
-            # getitem, slice
-            assert list(arrow_array[:2]) == list(string_array[:2])
-            assert list(arrow_array[1:-1]) == list(string_array[1:-1])
-            assert list(arrow_array[::2]) == list(string_array[::2])
-            # getitem, boolean index
-            cond = np.array([len(c) > 2 for c in lst])
-            assert list(arrow_array[cond]) == list(string_array[cond])
-            # getitem, fancy index
-            selection = [3, 1, 2]
-            assert list(arrow_array[selection]) == list(string_array[selection])
-            selection = [3, -1, 2, -4]
-            assert list(arrow_array[selection]) == list(string_array[selection])
-            selection = np.array([3, -1, 2, -4])
-            assert list(arrow_array[selection]) == list(string_array[selection])
+        # getitem, scalar
+        assert arrow_array[1] == string_array[1]
+        assert arrow_array[-1] == string_array[-1]
+        # getitem, slice
+        assert list(arrow_array[:2]) == list(string_array[:2])
+        assert list(arrow_array[1:-1]) == list(string_array[1:-1])
+        assert list(arrow_array[::2]) == list(string_array[::2])
+        # getitem, boolean index
+        cond = np.array([len(c) > 2 for c in lst])
+        assert list(arrow_array[cond]) == list(string_array[cond])
+        # getitem, fancy index
+        selection = [3, 1, 2]
+        assert list(arrow_array[selection]) == list(string_array[selection])
+        selection = [3, -1, 2, -4]
+        assert list(arrow_array[selection]) == list(string_array[selection])
+        selection = np.array([3, -1, 2, -4])
+        assert list(arrow_array[selection]) == list(string_array[selection])
 
-            # setitem
-            arrow_array2 = arrow_array.copy()
-            string_array2 = string_array.copy()
-            arrow_array2[0] = "ss"
-            string_array2[0] = "ss"
-            assert list(arrow_array2) == list(string_array2)
-            arrow_array2[1:3] = ["ss1", "ss2"]
-            string_array2[1:3] = ["ss1", "ss2"]
-            assert list(arrow_array2) == list(string_array2)
-            arrow_array2[1:3] = arrow_array2[2:4]
-            string_array2[1:3] = string_array2[2:4]
-            assert list(arrow_array2) == list(string_array2)
-            arrow_array2[2:] = pd.Series(["ss3", "ss4"])
-            string_array2[2:] = pd.Series(["ss3", "ss4"])
-            assert list(arrow_array2) == list(string_array2)
-            with pytest.raises(ValueError):
-                arrow_array2[0] = ["a", "b"]
-            arrow_array2[-1] = None
-            string_array2[-1] = None
-            assert list(arrow_array2)[:-1] == list(string_array2)[:-1]
-            assert pd.isna(list(arrow_array2)[-1]) is True
-            with pytest.raises(ValueError):
-                arrow_array2[0] = 2
-            with pytest.raises(ValueError):
-                arrow_array2[:2] = [1, 2]
+        # setitem
+        arrow_array2 = arrow_array.copy()
+        string_array2 = string_array.copy()
+        arrow_array2[0] = "ss"
+        string_array2[0] = "ss"
+        assert list(arrow_array2) == list(string_array2)
+        arrow_array2[1:3] = ["ss1", "ss2"]
+        string_array2[1:3] = ["ss1", "ss2"]
+        assert list(arrow_array2) == list(string_array2)
+        arrow_array2[1:3] = arrow_array2[2:4]
+        string_array2[1:3] = string_array2[2:4]
+        assert list(arrow_array2) == list(string_array2)
+        arrow_array2[-2:] = pd.Series(["ss3", "ss4"])
+        string_array2[-2:] = pd.Series(["ss3", "ss4"])
+        assert list(arrow_array2) == list(string_array2)
+        with pytest.raises(ValueError):
+            arrow_array2[0] = ["a", "b"]
+        arrow_array2[-1] = None
+        string_array2[-1] = None
+        assert list(arrow_array2)[:-1] == list(string_array2)[:-1]
+        assert pd.isna(list(arrow_array2)[-1]) is True
+        with pytest.raises(ValueError):
+            arrow_array2[0] = 2
+        with pytest.raises(ValueError):
+            arrow_array2[:2] = [1, 2]
 
-            # test to_numpy
-            np.testing.assert_array_equal(
-                arrow_array.to_numpy(), string_array.to_numpy()
-            )
-            np.testing.assert_array_equal(
-                arrow_array.to_numpy(copy=True), string_array.to_numpy(copy=True)
-            )
-            np.testing.assert_array_equal(
-                has_na_arrow_array.to_numpy(copy=True, na_value="ss"),
-                has_na_string_array.to_numpy(copy=True, na_value="ss"),
-            )
+        # test to_numpy
+        np.testing.assert_array_equal(arrow_array.to_numpy(), string_array.to_numpy())
+        np.testing.assert_array_equal(
+            arrow_array.to_numpy(copy=True), string_array.to_numpy(copy=True)
+        )
+        np.testing.assert_array_equal(
+            has_na_arrow_array.to_numpy(copy=True, na_value="ss"),
+            has_na_string_array.to_numpy(copy=True, na_value="ss"),
+        )
 
-            # test fillna
-            arrow_array3 = has_na_arrow_array.fillna("filled")
-            string_array3 = has_na_string_array.fillna("filled")
-            assert list(arrow_array3) == list(string_array3)
+        # test fillna
+        arrow_array3 = has_na_arrow_array.fillna("filled")
+        string_array3 = has_na_string_array.fillna("filled")
+        assert list(arrow_array3) == list(string_array3)
 
-            # test astype
-            arrow_array4 = ArrowStringArray(["1", "10", "100"])
-            # leverage string array to get the right answer
-            string_array4 = pd.arrays.StringArray(
-                np.array(["1", "10", "100"], dtype=object)
-            )
-            np.testing.assert_array_equal(
-                arrow_array4.astype(np.int64), string_array4.astype(np.int64)
-            )
-            np.testing.assert_almost_equal(
-                arrow_array4.astype(float), string_array4.astype(float)
-            )
-            assert list(arrow_array4.astype(ArrowStringDtype(), copy=False)) == list(
-                string_array4.astype(pd.StringDtype(), copy=False)
-            )
-            assert list(arrow_array4.astype(ArrowStringDtype(), copy=True)) == list(
-                string_array4.astype(pd.StringDtype(), copy=True)
-            )
+        # test astype
+        arrow_array4 = ArrowStringArray(["1", "10", "100"])
+        # leverage string array to get the right answer
+        string_array4 = pd.arrays.StringArray(
+            np.array(["1", "10", "100"], dtype=object)
+        )
+        np.testing.assert_array_equal(
+            arrow_array4.astype(np.int64), string_array4.astype(np.int64)
+        )
+        np.testing.assert_almost_equal(
+            arrow_array4.astype(float), string_array4.astype(float)
+        )
+        assert list(arrow_array4.astype(ArrowStringDtype(), copy=False)) == list(
+            string_array4.astype(pd.StringDtype(), copy=False)
+        )
+        assert list(arrow_array4.astype(ArrowStringDtype(), copy=True)) == list(
+            string_array4.astype(pd.StringDtype(), copy=True)
+        )
 
-            # test factorize
-            codes, unique = arrow_array.factorize()
-            codes2, unique2 = string_array.factorize()
-            assert list(codes) == list(codes2)
-            assert list(unique) == list(unique2)
+        # test factorize
+        codes, unique = arrow_array.factorize()
+        codes2, unique2 = string_array.factorize()
+        assert list(codes) == list(codes2)
+        assert list(unique) == list(unique2)
 
-            # test nbytes
-            assert arrow_array.nbytes < pd.Series(
-                string_array.astype(object)
-            ).memory_usage(deep=True, index=False)
+        # test nbytes
+        assert arrow_array.nbytes < pd.Series(string_array.astype(object)).memory_usage(
+            deep=True, index=False
+        )
 
-            # test memory_usage
-            if pandas_only:
-                assert arrow_array.memory_usage(deep=False) == pd.Series(
-                    string_array
-                ).memory_usage(index=False)
-            else:
-                assert arrow_array.memory_usage(deep=True) == arrow_array.nbytes
+        # test memory_usage
+        if pandas_only:
+            assert arrow_array.memory_usage(deep=False) == pd.Series(
+                string_array
+            ).memory_usage(index=False)
+        else:
+            assert arrow_array.memory_usage(deep=True) == arrow_array.nbytes
 
-            # test isna
-            np.testing.assert_array_equal(
-                has_na_arrow_array.isna(), has_na_string_array.isna()
-            )
-            has_na_arrow_array2 = has_na_arrow_array.copy()
-            has_na_arrow_array2._force_use_pandas = True
-            np.testing.assert_array_equal(
-                has_na_arrow_array2.isna(), has_na_string_array.isna()
-            )
+        # test isna
+        np.testing.assert_array_equal(
+            has_na_arrow_array.isna(), has_na_string_array.isna()
+        )
+        has_na_arrow_array2 = has_na_arrow_array.copy()
+        has_na_arrow_array2._force_use_pandas = True
+        np.testing.assert_array_equal(
+            has_na_arrow_array2.isna(), has_na_string_array.isna()
+        )
 
-            # test take
-            assert list(arrow_array.take([1, 2, -1])) == list(
-                string_array.take([1, 2, -1])
-            )
-            assert list(
-                arrow_array.take([1, 2, -1], allow_fill=True).fillna("aa")
-            ) == list(string_array.take([1, 2, -1], allow_fill=True).fillna("aa"))
-            assert list(
-                arrow_array.take([1, 2, -1], allow_fill=True, fill_value="aa")
-            ) == list(string_array.take([1, 2, -1], allow_fill=True, fill_value="aa"))
+        # test take
+        assert list(arrow_array.take([1, 2, -1])) == list(string_array.take([1, 2, -1]))
+        assert list(arrow_array.take([1, 2, -1], allow_fill=True).fillna("aa")) == list(
+            string_array.take([1, 2, -1], allow_fill=True).fillna("aa")
+        )
+        assert list(
+            arrow_array.take([1, 2, -1], allow_fill=True, fill_value="aa")
+        ) == list(string_array.take([1, 2, -1], allow_fill=True, fill_value="aa"))
 
-            # test shift
-            assert list(arrow_array.shift(2, fill_value="aa")) == list(
-                string_array.shift(2, fill_value="aa")
-            )
+        # test shift
+        assert list(arrow_array.shift(2, fill_value="aa")) == list(
+            string_array.shift(2, fill_value="aa")
+        )
 
-            # test value_counts
-            assert list(arrow_array.value_counts()) == list(string_array.value_counts())
-            assert list(has_na_arrow_array.value_counts(dropna=True)) == list(
-                has_na_string_array.value_counts(dropna=True)
-            )
+        # test value_counts
+        assert list(arrow_array.value_counts()) == list(string_array.value_counts())
+        assert list(has_na_arrow_array.value_counts(dropna=True)) == list(
+            has_na_string_array.value_counts(dropna=True)
+        )
 
-            # test all any
-            assert arrow_array.all() == string_array.all()
-            assert arrow_array.any() == string_array.any()
+        # test all any
+        assert arrow_array.all() == string_array.all()
+        assert arrow_array.any() == string_array.any()
 
-            # test arithmetic
-            assert list(arrow_array + "s") == list(string_array + "s")
-            assert list((arrow_array + has_na_arrow_array).fillna("ss")) == list(
-                (string_array + has_na_string_array).fillna("ss")
-            )
+        # test arithmetic
+        assert list(arrow_array + "s") == list(string_array + "s")
+        assert list((arrow_array + has_na_arrow_array).fillna("ss")) == list(
+            (string_array + has_na_string_array).fillna("ss")
+        )
 
-            # test comparison
-            np.testing.assert_array_equal(arrow_array < "s", string_array < "s")
-            pd.testing.assert_series_equal(
-                pd.Series(arrow_array < has_na_arrow_array),
-                pd.Series(string_array < has_na_string_array),
-            )
+        # test comparison
+        np.testing.assert_array_equal(arrow_array < "s", string_array < "s")
+        pd.testing.assert_series_equal(
+            pd.Series(arrow_array < has_na_arrow_array),
+            pd.Series(string_array < has_na_string_array),
+        )
 
-            # test repr
-            assert "ArrowStringArray" in repr(arrow_array)
+        # test repr
+        assert "ArrowStringArray" in repr(arrow_array)
 
-            # test concat empty
-            arrow_array5 = ArrowStringArray(pa.chunked_array([], type=pa.string()))
-            concatenated = ArrowStringArray._concat_same_type(
-                [arrow_array5, arrow_array5]
-            )
-            if not pandas_only:
-                assert len(concatenated._arrow_array.chunks) == 1
-            pd.testing.assert_series_equal(
-                pd.Series(arrow_array5), pd.Series(concatenated)
-            )
+        # test concat empty
+        arrow_array5 = ArrowStringArray(pa.chunked_array([], type=pa.string()))
+        concatenated = ArrowStringArray._concat_same_type([arrow_array5, arrow_array5])
+        if not pandas_only:
+            assert len(concatenated._arrow_array.chunks) == 1
+        pd.testing.assert_series_equal(pd.Series(arrow_array5), pd.Series(concatenated))
 
 
 @pytest.mark.skipif(pa is None, reason="pyarrow not installed")
