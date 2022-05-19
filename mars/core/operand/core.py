@@ -45,6 +45,10 @@ op_executed_number = Metrics.counter(
 )
 
 
+class OperandExecutionNotImplemented(NotImplementedError):
+    pass
+
+
 class TileableOperandMixin:
     __slots__ = ()
 
@@ -328,7 +332,7 @@ class TileableOperandMixin:
 
     @classmethod
     def execute(cls, ctx: Union[dict, Context], op: OperandType):
-        raise NotImplementedError
+        raise OperandExecutionNotImplemented
 
     @classmethod
     def post_execute(cls, ctx: Union[dict, Context], op: OperandType):
@@ -494,7 +498,7 @@ def execute(results: Dict[str, Any], op: OperandType):
                 return result
             except UFuncTypeError as e:  # pragma: no cover
                 raise TypeError(str(e)).with_traceback(sys.exc_info()[2]) from None
-    except NotImplementedError:
+    except OperandExecutionNotImplemented:
         for op_cls in type(op).__mro__:
             if op_cls in _op_type_to_executor:
                 executor = _op_type_to_executor[op_cls]

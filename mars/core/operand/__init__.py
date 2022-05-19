@@ -20,7 +20,12 @@ from .base import (
     OperatorLogicKeyGeneratorMixin,
     LogicKeyGenerator,
 )
-from .core import TileableOperandMixin, execute, estimate_size
+from .core import (
+    TileableOperandMixin,
+    execute,
+    estimate_size,
+    OperandExecutionNotImplemented,
+)
 from .fetch import Fetch, FetchMixin, FetchShuffle
 from .fuse import Fuse, FuseChunkMixin
 from .objects import (
