@@ -25,10 +25,10 @@ import mars.dataframe as md
 queries: Optional[Union[Set[str], List[str]]] = None
 
 
-def load_lineitem(data_folder: str) -> md.DataFrame:
+def load_lineitem(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/lineitem.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     df["L_SHIPDATE"] = md.to_datetime(df.L_SHIPDATE, format="%Y-%m-%d")
     df["L_RECEIPTDATE"] = md.to_datetime(df.L_RECEIPTDATE, format="%Y-%m-%d")
@@ -36,59 +36,59 @@ def load_lineitem(data_folder: str) -> md.DataFrame:
     return df
 
 
-def load_part(data_folder: str) -> md.DataFrame:
+def load_part(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/part.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
 
-def load_orders(data_folder: str) -> md.DataFrame:
+def load_orders(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/orders.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     df["O_ORDERDATE"] = md.to_datetime(df.O_ORDERDATE, format="%Y-%m-%d")
     return df
 
 
-def load_customer(data_folder: str) -> md.DataFrame:
+def load_customer(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/customer.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
 
-def load_nation(data_folder: str) -> md.DataFrame:
+def load_nation(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/nation.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
 
-def load_region(data_folder: str) -> md.DataFrame:
+def load_region(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/region.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
 
-def load_supplier(data_folder: str) -> md.DataFrame:
+def load_supplier(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/supplier.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
 
-def load_partsupp(data_folder: str) -> md.DataFrame:
+def load_partsupp(data_folder: str, use_arrow_dtype: bool = None) -> md.DataFrame:
     data_path = data_folder + "/partsupp.pq"
     df = md.read_parquet(
-        data_path,
+        data_path, use_arrow_dtype=use_arrow_dtype
     )
     return df
 
@@ -110,29 +110,29 @@ def tpc_query(q: Callable):
 def q01(lineitem: md.DataFrame):
     date = md.Timestamp("1998-09-02")
     lineitem_filtered = lineitem.loc[
-        :,
-        [
-            "L_QUANTITY",
-            "L_EXTENDEDPRICE",
-            "L_DISCOUNT",
-            "L_TAX",
-            "L_RETURNFLAG",
-            "L_LINESTATUS",
-            "L_SHIPDATE",
-            "L_ORDERKEY",
-        ],
-    ]
+                        :,
+                        [
+                            "L_QUANTITY",
+                            "L_EXTENDEDPRICE",
+                            "L_DISCOUNT",
+                            "L_TAX",
+                            "L_RETURNFLAG",
+                            "L_LINESTATUS",
+                            "L_SHIPDATE",
+                            "L_ORDERKEY",
+                        ],
+                        ]
     sel = lineitem_filtered.L_SHIPDATE <= date
     lineitem_filtered = lineitem_filtered[sel]
     lineitem_filtered["AVG_QTY"] = lineitem_filtered.L_QUANTITY
     lineitem_filtered["AVG_PRICE"] = lineitem_filtered.L_EXTENDEDPRICE
     lineitem_filtered["DISC_PRICE"] = lineitem_filtered.L_EXTENDEDPRICE * (
-        1 - lineitem_filtered.L_DISCOUNT
+            1 - lineitem_filtered.L_DISCOUNT
     )
     lineitem_filtered["CHARGE"] = (
-        lineitem_filtered.L_EXTENDEDPRICE
-        * (1 - lineitem_filtered.L_DISCOUNT)
-        * (1 + lineitem_filtered.L_TAX)
+            lineitem_filtered.L_EXTENDEDPRICE
+            * (1 - lineitem_filtered.L_DISCOUNT)
+            * (1 + lineitem_filtered.L_TAX)
     )
     gb = lineitem_filtered.groupby(["L_RETURNFLAG", "L_LINESTATUS"], as_index=False)[
         [
@@ -173,72 +173,72 @@ def q02(part, partsupp, supplier, nation, region):
     )
     r_n_merged = r_n_merged.loc[:, ["N_NATIONKEY", "N_NAME"]]
     supplier_filtered = supplier.loc[
-        :,
-        [
-            "S_SUPPKEY",
-            "S_NAME",
-            "S_ADDRESS",
-            "S_NATIONKEY",
-            "S_PHONE",
-            "S_ACCTBAL",
-            "S_COMMENT",
-        ],
-    ]
+                        :,
+                        [
+                            "S_SUPPKEY",
+                            "S_NAME",
+                            "S_ADDRESS",
+                            "S_NATIONKEY",
+                            "S_PHONE",
+                            "S_ACCTBAL",
+                            "S_COMMENT",
+                        ],
+                        ]
     s_r_n_merged = r_n_merged.merge(
         supplier_filtered, left_on="N_NATIONKEY", right_on="S_NATIONKEY", how="inner"
     )
     s_r_n_merged = s_r_n_merged.loc[
-        :,
-        [
-            "N_NAME",
-            "S_SUPPKEY",
-            "S_NAME",
-            "S_ADDRESS",
-            "S_PHONE",
-            "S_ACCTBAL",
-            "S_COMMENT",
-        ],
-    ]
+                   :,
+                   [
+                       "N_NAME",
+                       "S_SUPPKEY",
+                       "S_NAME",
+                       "S_ADDRESS",
+                       "S_PHONE",
+                       "S_ACCTBAL",
+                       "S_COMMENT",
+                   ],
+                   ]
     partsupp_filtered = partsupp.loc[:, ["PS_PARTKEY", "PS_SUPPKEY", "PS_SUPPLYCOST"]]
     ps_s_r_n_merged = s_r_n_merged.merge(
         partsupp_filtered, left_on="S_SUPPKEY", right_on="PS_SUPPKEY", how="inner"
     )
     ps_s_r_n_merged = ps_s_r_n_merged.loc[
-        :,
-        [
-            "N_NAME",
-            "S_NAME",
-            "S_ADDRESS",
-            "S_PHONE",
-            "S_ACCTBAL",
-            "S_COMMENT",
-            "PS_PARTKEY",
-            "PS_SUPPLYCOST",
-        ],
-    ]
+                      :,
+                      [
+                          "N_NAME",
+                          "S_NAME",
+                          "S_ADDRESS",
+                          "S_PHONE",
+                          "S_ACCTBAL",
+                          "S_COMMENT",
+                          "PS_PARTKEY",
+                          "PS_SUPPLYCOST",
+                      ],
+                      ]
     part_filtered = part.loc[:, ["P_PARTKEY", "P_MFGR", "P_SIZE", "P_TYPE"]]
     part_filtered = part_filtered[
         (part_filtered["P_SIZE"] == 15)
         & (part_filtered["P_TYPE"].str.endswith("BRASS"))
-    ]
+        ]
     part_filtered = part_filtered.loc[:, ["P_PARTKEY", "P_MFGR"]]
     merged_df = part_filtered.merge(
         ps_s_r_n_merged, left_on="P_PARTKEY", right_on="PS_PARTKEY", how="inner"
     )
     merged_df = merged_df.loc[
-        :,
-        [
-            "N_NAME",
-            "S_NAME",
-            "S_ADDRESS",
-            "S_PHONE",
-            "S_ACCTBAL",
-            "S_COMMENT",
-            "PS_SUPPLYCOST",
-            "P_PARTKEY",
-            "P_MFGR",
-        ],
-    ]
+                :,
+                [
+                    "N_NAME",
+                    "S_NAME",
+                    "S_ADDRESS",
+                    "S_PHONE",
+                    "S_ACCTBAL",
+                    "S_COMMENT",
+                    "PS_SUPPLYCOST",
+                    "P_PARTKEY",
+                    "P_MFGR",
+                ],
+                ]
     min_values = merged_df.groupby("P_PARTKEY", as_index=False, sort=False)[
         "PS_SUPPLYCOST"
     ].min()
@@ -250,18 +250,18 @@ def q02(part, partsupp, supplier, nation, region):
         how="inner",
     )
     total = merged_df.loc[
-        :,
-        [
-            "S_ACCTBAL",
-            "S_NAME",
-            "N_NAME",
-            "P_PARTKEY",
-            "P_MFGR",
-            "S_ADDRESS",
-            "S_PHONE",
-            "S_COMMENT",
-        ],
-    ]
+            :,
+            [
+                "S_ACCTBAL",
+                "S_NAME",
+                "N_NAME",
+                "P_PARTKEY",
+                "P_MFGR",
+                "S_ADDRESS",
+                "S_PHONE",
+                "S_COMMENT",
+            ],
+            ]
     total = total.sort_values(
         by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"],
         ascending=[False, True, True, True],
@@ -273,11 +273,11 @@ def q02(part, partsupp, supplier, nation, region):
 def q03(lineitem, orders, customer):
     date = md.Timestamp("1995-03-04")
     lineitem_filtered = lineitem.loc[
-        :, ["L_ORDERKEY", "L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE"]
-    ]
+                        :, ["L_ORDERKEY", "L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE"]
+                        ]
     orders_filtered = orders.loc[
-        :, ["O_ORDERKEY", "O_CUSTKEY", "O_ORDERDATE", "O_SHIPPRIORITY"]
-    ]
+                      :, ["O_ORDERKEY", "O_CUSTKEY", "O_ORDERDATE", "O_SHIPPRIORITY"]
+                      ]
     customer_filtered = customer.loc[:, ["C_MKTSEGMENT", "C_CUSTKEY"]]
     lsel = lineitem_filtered.L_SHIPDATE > date
     osel = orders_filtered.O_ORDERDATE < date
@@ -292,8 +292,8 @@ def q03(lineitem, orders, customer):
         jn2.groupby(
             ["L_ORDERKEY", "O_ORDERDATE", "O_SHIPPRIORITY"], as_index=False, sort=False
         )["TMP"]
-        .sum()
-        .sort_values(["TMP"], ascending=False)
+            .sum()
+            .sort_values(["TMP"], ascending=False)
     )
     res = total.loc[:, ["L_ORDERKEY", "TMP", "O_ORDERDATE", "O_SHIPPRIORITY"]]
     print(res.head(10).execute())
@@ -343,14 +343,14 @@ def q06(lineitem):
     date1 = md.Timestamp("1996-01-01")
     date2 = md.Timestamp("1997-01-01")
     lineitem_filtered = lineitem.loc[
-        :, ["L_QUANTITY", "L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE"]
-    ]
+                        :, ["L_QUANTITY", "L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE"]
+                        ]
     sel = (
-        (lineitem_filtered.L_SHIPDATE >= date1)
-        & (lineitem_filtered.L_SHIPDATE < date2)
-        & (lineitem_filtered.L_DISCOUNT >= 0.08)
-        & (lineitem_filtered.L_DISCOUNT <= 0.1)
-        & (lineitem_filtered.L_QUANTITY < 24)
+            (lineitem_filtered.L_SHIPDATE >= date1)
+            & (lineitem_filtered.L_SHIPDATE < date2)
+            & (lineitem_filtered.L_DISCOUNT >= 0.08)
+            & (lineitem_filtered.L_DISCOUNT <= 0.1)
+            & (lineitem_filtered.L_QUANTITY < 24)
     )
     flineitem = lineitem_filtered[sel]
     total = (flineitem.L_EXTENDEDPRICE * flineitem.L_DISCOUNT).sum()
@@ -363,14 +363,14 @@ def q07(lineitem, supplier, orders, customer, nation):
     lineitem_filtered = lineitem[
         (lineitem["L_SHIPDATE"] >= md.Timestamp("1995-01-01"))
         & (lineitem["L_SHIPDATE"] < md.Timestamp("1997-01-01"))
-    ]
+        ]
     lineitem_filtered["L_YEAR"] = lineitem_filtered["L_SHIPDATE"].dt.year
     lineitem_filtered["VOLUME"] = lineitem_filtered["L_EXTENDEDPRICE"] * (
-        1.0 - lineitem_filtered["L_DISCOUNT"]
+            1.0 - lineitem_filtered["L_DISCOUNT"]
     )
     lineitem_filtered = lineitem_filtered.loc[
-        :, ["L_ORDERKEY", "L_SUPPKEY", "L_YEAR", "VOLUME"]
-    ]
+                        :, ["L_ORDERKEY", "L_SUPPKEY", "L_YEAR", "VOLUME"]
+                        ]
     supplier_filtered = supplier.loc[:, ["S_SUPPKEY", "S_NATIONKEY"]]
     orders_filtered = orders.loc[:, ["O_ORDERKEY", "O_CUSTKEY"]]
     customer_filtered = customer.loc[:, ["C_CUSTKEY", "C_NATIONKEY"]]
@@ -452,7 +452,7 @@ def q08(part, lineitem, supplier, orders, customer, nation, region):
     part_filtered = part_filtered.loc[:, ["P_PARTKEY"]]
     lineitem_filtered = lineitem.loc[:, ["L_PARTKEY", "L_SUPPKEY", "L_ORDERKEY"]]
     lineitem_filtered["VOLUME"] = lineitem["L_EXTENDEDPRICE"] * (
-        1.0 - lineitem["L_DISCOUNT"]
+            1.0 - lineitem["L_DISCOUNT"]
     )
     total = part_filtered.merge(
         lineitem_filtered, left_on="P_PARTKEY", right_on="L_PARTKEY", how="inner"
@@ -466,7 +466,7 @@ def q08(part, lineitem, supplier, orders, customer, nation, region):
     orders_filtered = orders[
         (orders["O_ORDERDATE"] >= md.Timestamp("1995-01-01"))
         & (orders["O_ORDERDATE"] < md.Timestamp("1997-01-01"))
-    ]
+        ]
     orders_filtered["O_YEAR"] = orders_filtered["O_ORDERDATE"].dt.year
     orders_filtered = orders_filtered.loc[:, ["O_ORDERKEY", "O_CUSTKEY", "O_YEAR"]]
     total = total.merge(
@@ -521,7 +521,7 @@ def q09(lineitem, orders, part, nation, partsupp, supplier):
     )
     jn5 = jn4.merge(orders, left_on="L_ORDERKEY", right_on="O_ORDERKEY")
     jn5["TMP"] = jn5.L_EXTENDEDPRICE * (1 - jn5.L_DISCOUNT) - (
-        (1 * jn5.PS_SUPPLYCOST) * jn5.L_QUANTITY
+            (1 * jn5.PS_SUPPLYCOST) * jn5.L_QUANTITY
     )
     jn5["O_YEAR"] = jn5.O_ORDERDATE.dt.year
     gb = jn5.groupby(["N_NAME", "O_YEAR"], as_index=False, sort=False)["TMP"].sum()
@@ -562,7 +562,7 @@ def q10(lineitem, orders, customer, nation):
 def q11(partsupp, supplier, nation):
     partsupp_filtered = partsupp.loc[:, ["PS_PARTKEY", "PS_SUPPKEY"]]
     partsupp_filtered["TOTAL_COST"] = (
-        partsupp["PS_SUPPLYCOST"] * partsupp["PS_AVAILQTY"]
+            partsupp["PS_SUPPLYCOST"] * partsupp["PS_AVAILQTY"]
     )
     supplier_filtered = supplier.loc[:, ["S_SUPPKEY", "S_NATIONKEY"]]
     ps_supp_merge = partsupp_filtered.merge(
@@ -589,13 +589,13 @@ def q12(lineitem, orders):
     date1 = md.Timestamp("1994-01-01")
     date2 = md.Timestamp("1995-01-01")
     sel = (
-        (lineitem.L_RECEIPTDATE < date2)
-        & (lineitem.L_COMMITDATE < date2)
-        & (lineitem.L_SHIPDATE < date2)
-        & (lineitem.L_SHIPDATE < lineitem.L_COMMITDATE)
-        & (lineitem.L_COMMITDATE < lineitem.L_RECEIPTDATE)
-        & (lineitem.L_RECEIPTDATE >= date1)
-        & ((lineitem.L_SHIPMODE == "MAIL") | (lineitem.L_SHIPMODE == "SHIP"))
+            (lineitem.L_RECEIPTDATE < date2)
+            & (lineitem.L_COMMITDATE < date2)
+            & (lineitem.L_SHIPDATE < date2)
+            & (lineitem.L_SHIPDATE < lineitem.L_COMMITDATE)
+            & (lineitem.L_COMMITDATE < lineitem.L_RECEIPTDATE)
+            & (lineitem.L_RECEIPTDATE >= date1)
+            & ((lineitem.L_SHIPMODE == "MAIL") | (lineitem.L_SHIPMODE == "SHIP"))
     )
     flineitem = lineitem[sel]
     jn = flineitem.merge(orders, left_on="L_ORDERKEY", right_on="O_ORDERKEY")
@@ -640,10 +640,10 @@ def q14(lineitem, part):
     p_type_like = "PROMO"
     part_filtered = part.loc[:, ["P_PARTKEY", "P_TYPE"]]
     lineitem_filtered = lineitem.loc[
-        :, ["L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE", "L_PARTKEY"]
-    ]
+                        :, ["L_EXTENDEDPRICE", "L_DISCOUNT", "L_SHIPDATE", "L_PARTKEY"]
+                        ]
     sel = (lineitem_filtered.L_SHIPDATE >= startDate) & (
-        lineitem_filtered.L_SHIPDATE < endDate
+            lineitem_filtered.L_SHIPDATE < endDate
     )
     flineitem = lineitem_filtered[sel]
     jn = flineitem.merge(part_filtered, left_on="L_PARTKEY", right_on="P_PARTKEY")
@@ -657,18 +657,18 @@ def q15(lineitem, supplier):
     lineitem_filtered = lineitem[
         (lineitem["L_SHIPDATE"] >= md.Timestamp("1996-01-01"))
         & (
-            lineitem["L_SHIPDATE"]
-            < (md.Timestamp("1996-01-01") + md.DateOffset(months=3))
+                lineitem["L_SHIPDATE"]
+                < (md.Timestamp("1996-01-01") + md.DateOffset(months=3))
         )
-    ]
+        ]
     lineitem_filtered["REVENUE_PARTS"] = lineitem_filtered["L_EXTENDEDPRICE"] * (
-        1.0 - lineitem_filtered["L_DISCOUNT"]
+            1.0 - lineitem_filtered["L_DISCOUNT"]
     )
     lineitem_filtered = lineitem_filtered.loc[:, ["L_SUPPKEY", "REVENUE_PARTS"]]
     revenue_table = (
         lineitem_filtered.groupby("L_SUPPKEY", as_index=False, sort=False)
-        .agg(TOTAL_REVENUE=md.NamedAgg(column="REVENUE_PARTS", aggfunc="sum"))
-        .rename(columns={"L_SUPPKEY": "SUPPLIER_NO"})
+            .agg(TOTAL_REVENUE=md.NamedAgg(column="REVENUE_PARTS", aggfunc="sum"))
+            .rename(columns={"L_SUPPKEY": "SUPPLIER_NO"})
     )
     max_revenue = revenue_table["TOTAL_REVENUE"].max()
     revenue_table = revenue_table[revenue_table["TOTAL_REVENUE"] == max_revenue]
@@ -677,8 +677,8 @@ def q15(lineitem, supplier):
         revenue_table, left_on="S_SUPPKEY", right_on="SUPPLIER_NO", how="inner"
     )
     total = total.loc[
-        :, ["S_SUPPKEY", "S_NAME", "S_ADDRESS", "S_PHONE", "TOTAL_REVENUE"]
-    ]
+            :, ["S_SUPPKEY", "S_NAME", "S_ADDRESS", "S_PHONE", "TOTAL_REVENUE"]
+            ]
     print(total.execute())
 
 
@@ -688,7 +688,7 @@ def q16(part, partsupp, supplier):
         (part["P_BRAND"] != "Brand#45")
         & (~part["P_TYPE"].str.contains("^MEDIUM POLISHED"))
         & part["P_SIZE"].isin([49, 14, 23, 45, 19, 3, 36, 9])
-    ]
+        ]
     part_filtered = part_filtered.loc[:, ["P_PARTKEY", "P_BRAND", "P_TYPE", "P_SIZE"]]
     partsupp_filtered = partsupp.loc[:, ["PS_PARTKEY", "PS_SUPPKEY"]]
     total = part_filtered.merge(
@@ -725,8 +725,8 @@ def q17(lineitem, part):
         right, left_on="L_PARTKEY", right_on="P_PARTKEY", how="inner"
     )
     line_part_merge = line_part_merge.loc[
-        :, ["L_QUANTITY", "L_EXTENDEDPRICE", "P_PARTKEY"]
-    ]
+                      :, ["L_QUANTITY", "L_EXTENDEDPRICE", "P_PARTKEY"]
+                      ]
     lineitem_filtered = lineitem.loc[:, ["L_PARTKEY", "L_QUANTITY"]]
     lineitem_avg = lineitem_filtered.groupby(
         ["L_PARTKEY"], as_index=False, sort=False
@@ -776,80 +776,80 @@ def q19(lineitem, part):
     AIR = "AIR"
     AIRREG = "AIRREG"
     lsel = (
-        (
-            ((lineitem.L_QUANTITY <= 36) & (lineitem.L_QUANTITY >= 26))
-            | ((lineitem.L_QUANTITY <= 25) & (lineitem.L_QUANTITY >= 15))
-            | ((lineitem.L_QUANTITY <= 14) & (lineitem.L_QUANTITY >= 4))
-        )
-        & (lineitem.L_SHIPINSTRUCT == DELIVERINPERSON)
-        & ((lineitem.L_SHIPMODE == AIR) | (lineitem.L_SHIPMODE == AIRREG))
+            (
+                    ((lineitem.L_QUANTITY <= 36) & (lineitem.L_QUANTITY >= 26))
+                    | ((lineitem.L_QUANTITY <= 25) & (lineitem.L_QUANTITY >= 15))
+                    | ((lineitem.L_QUANTITY <= 14) & (lineitem.L_QUANTITY >= 4))
+            )
+            & (lineitem.L_SHIPINSTRUCT == DELIVERINPERSON)
+            & ((lineitem.L_SHIPMODE == AIR) | (lineitem.L_SHIPMODE == AIRREG))
     )
     psel = (part.P_SIZE >= 1) & (
-        (
-            (part.P_SIZE <= 5)
-            & (part.P_BRAND == Brand31)
-            & (
-                (part.P_CONTAINER == SMBOX)
-                | (part.P_CONTAINER == SMCASE)
-                | (part.P_CONTAINER == SMPACK)
-                | (part.P_CONTAINER == SMPKG)
+            (
+                    (part.P_SIZE <= 5)
+                    & (part.P_BRAND == Brand31)
+                    & (
+                            (part.P_CONTAINER == SMBOX)
+                            | (part.P_CONTAINER == SMCASE)
+                            | (part.P_CONTAINER == SMPACK)
+                            | (part.P_CONTAINER == SMPKG)
+                    )
             )
-        )
-        | (
-            (part.P_SIZE <= 10)
-            & (part.P_BRAND == Brand43)
-            & (
-                (part.P_CONTAINER == MEDBAG)
-                | (part.P_CONTAINER == MEDBOX)
-                | (part.P_CONTAINER == MEDPACK)
-                | (part.P_CONTAINER == MEDPKG)
+            | (
+                    (part.P_SIZE <= 10)
+                    & (part.P_BRAND == Brand43)
+                    & (
+                            (part.P_CONTAINER == MEDBAG)
+                            | (part.P_CONTAINER == MEDBOX)
+                            | (part.P_CONTAINER == MEDPACK)
+                            | (part.P_CONTAINER == MEDPKG)
+                    )
             )
-        )
-        | (
-            (part.P_SIZE <= 15)
-            & (part.P_BRAND == Brand43)
-            & (
-                (part.P_CONTAINER == LGBOX)
-                | (part.P_CONTAINER == LGCASE)
-                | (part.P_CONTAINER == LGPACK)
-                | (part.P_CONTAINER == LGPKG)
+            | (
+                    (part.P_SIZE <= 15)
+                    & (part.P_BRAND == Brand43)
+                    & (
+                            (part.P_CONTAINER == LGBOX)
+                            | (part.P_CONTAINER == LGCASE)
+                            | (part.P_CONTAINER == LGPACK)
+                            | (part.P_CONTAINER == LGPKG)
+                    )
             )
-        )
     )
     flineitem = lineitem[lsel]
     fpart = part[psel]
     jn = flineitem.merge(fpart, left_on="L_PARTKEY", right_on="P_PARTKEY")
     jnsel = (
-        (jn.P_BRAND == Brand31)
-        & (
-            (jn.P_CONTAINER == SMBOX)
-            | (jn.P_CONTAINER == SMCASE)
-            | (jn.P_CONTAINER == SMPACK)
-            | (jn.P_CONTAINER == SMPKG)
-        )
-        & (jn.L_QUANTITY >= 4)
-        & (jn.L_QUANTITY <= 14)
-        & (jn.P_SIZE <= 5)
-        | (jn.P_BRAND == Brand43)
-        & (
-            (jn.P_CONTAINER == MEDBAG)
-            | (jn.P_CONTAINER == MEDBOX)
-            | (jn.P_CONTAINER == MEDPACK)
-            | (jn.P_CONTAINER == MEDPKG)
-        )
-        & (jn.L_QUANTITY >= 15)
-        & (jn.L_QUANTITY <= 25)
-        & (jn.P_SIZE <= 10)
-        | (jn.P_BRAND == Brand43)
-        & (
-            (jn.P_CONTAINER == LGBOX)
-            | (jn.P_CONTAINER == LGCASE)
-            | (jn.P_CONTAINER == LGPACK)
-            | (jn.P_CONTAINER == LGPKG)
-        )
-        & (jn.L_QUANTITY >= 26)
-        & (jn.L_QUANTITY <= 36)
-        & (jn.P_SIZE <= 15)
+            (jn.P_BRAND == Brand31)
+            & (
+                    (jn.P_CONTAINER == SMBOX)
+                    | (jn.P_CONTAINER == SMCASE)
+                    | (jn.P_CONTAINER == SMPACK)
+                    | (jn.P_CONTAINER == SMPKG)
+            )
+            & (jn.L_QUANTITY >= 4)
+            & (jn.L_QUANTITY <= 14)
+            & (jn.P_SIZE <= 5)
+            | (jn.P_BRAND == Brand43)
+            & (
+                    (jn.P_CONTAINER == MEDBAG)
+                    | (jn.P_CONTAINER == MEDBOX)
+                    | (jn.P_CONTAINER == MEDPACK)
+                    | (jn.P_CONTAINER == MEDPKG)
+            )
+            & (jn.L_QUANTITY >= 15)
+            & (jn.L_QUANTITY <= 25)
+            & (jn.P_SIZE <= 10)
+            | (jn.P_BRAND == Brand43)
+            & (
+                    (jn.P_CONTAINER == LGBOX)
+                    | (jn.P_CONTAINER == LGCASE)
+                    | (jn.P_CONTAINER == LGPACK)
+                    | (jn.P_CONTAINER == LGPKG)
+            )
+            & (jn.L_QUANTITY >= 26)
+            & (jn.L_QUANTITY <= 36)
+            & (jn.P_SIZE <= 15)
     )
     jn = jn[jnsel]
     total = (jn.L_EXTENDEDPRICE * (1.0 - jn.L_DISCOUNT)).sum()
@@ -887,14 +887,14 @@ def q20(lineitem, part, nation, partsupp, supplier):
 @tpc_query
 def q21(lineitem, orders, supplier, nation):
     lineitem_filtered = lineitem.loc[
-        :, ["L_ORDERKEY", "L_SUPPKEY", "L_RECEIPTDATE", "L_COMMITDATE"]
-    ]
+                        :, ["L_ORDERKEY", "L_SUPPKEY", "L_RECEIPTDATE", "L_COMMITDATE"]
+                        ]
 
     # Keep all rows that have another row in linetiem with the same orderkey and different suppkey
     lineitem_orderkeys = (
         lineitem_filtered.loc[:, ["L_ORDERKEY", "L_SUPPKEY"]]
-        .groupby("L_ORDERKEY", as_index=False, sort=False)["L_SUPPKEY"]
-        .nunique()
+            .groupby("L_ORDERKEY", as_index=False, sort=False)["L_SUPPKEY"]
+            .nunique()
     )
     lineitem_orderkeys.columns = ["L_ORDERKEY", "nunique_col"]
     lineitem_orderkeys = lineitem_orderkeys[lineitem_orderkeys["nunique_col"] > 1]
@@ -903,7 +903,7 @@ def q21(lineitem, orders, supplier, nation):
     # Keep all rows that have l_receiptdate > l_commitdate
     lineitem_filtered = lineitem_filtered[
         lineitem_filtered["L_RECEIPTDATE"] > lineitem_filtered["L_COMMITDATE"]
-    ]
+        ]
     lineitem_filtered = lineitem_filtered.loc[:, ["L_ORDERKEY", "L_SUPPKEY"]]
 
     # Merge Filter + Exists
@@ -958,7 +958,7 @@ def q22(customer, orders):
         & customer_filtered["CNTRYCODE"].isin(
             ["13", "31", "23", "29", "30", "18", "17"]
         )
-    ]
+        ]
     avg_value = customer_filtered["C_ACCTBAL"].mean()
     customer_filtered = customer_filtered[customer_filtered["C_ACCTBAL"] > avg_value]
     # Select only the keys that don't match by performing a left join and only selecting columns with an na value
@@ -983,21 +983,21 @@ def q22(customer, orders):
     print(total.execute())
 
 
-def run_queries(data_folder: str, select: List[str] = None):
+def run_queries(data_folder: str, select: List[str] = None, use_arrow_dtype: bool = None):
     if select:
         global queries
         queries = select
 
     # Load the data
     t1 = time.time()
-    lineitem = load_lineitem(data_folder)
-    orders = load_orders(data_folder)
-    customer = load_customer(data_folder)
-    nation = load_nation(data_folder)
-    region = load_region(data_folder)
-    supplier = load_supplier(data_folder)
-    part = load_part(data_folder)
-    partsupp = load_partsupp(data_folder)
+    lineitem = load_lineitem(data_folder, use_arrow_dtype=use_arrow_dtype)
+    orders = load_orders(data_folder, use_arrow_dtype=use_arrow_dtype)
+    customer = load_customer(data_folder, use_arrow_dtype=use_arrow_dtype)
+    nation = load_nation(data_folder, use_arrow_dtype=use_arrow_dtype)
+    region = load_region(data_folder, use_arrow_dtype=use_arrow_dtype)
+    supplier = load_supplier(data_folder, use_arrow_dtype=use_arrow_dtype)
+    part = load_part(data_folder, use_arrow_dtype=use_arrow_dtype)
+    partsupp = load_partsupp(data_folder, use_arrow_dtype=use_arrow_dtype)
     mars.execute([lineitem, orders, customer, nation, region, supplier, part, partsupp])
     print("Reading time (s): ", time.time() - t1)
 
@@ -1049,14 +1049,27 @@ def main():
             "all tests will be executed"
         ),
     )
+    parser.add_argument(
+        "--use-arrow-dtype",
+        type=str,
+        choices=['true', 'false'],
+        help=(
+            "Use arrow dtype to read parquet"
+        ),
+    )
     args = parser.parse_args()
     folder = args.folder
     endpoint = args.endpoint
+    use_arrow_dtype = args.use_arrow_dtype
+    if use_arrow_dtype == 'true':
+        use_arrow_dtype = True
+    elif use_arrow_dtype == 'false':
+        use_arrow_dtype = False
     queries = (
         set(x.lower().strip() for x in args.query.split(",")) if args.query else None
     )
     mars.new_session(endpoint)
-    run_queries(folder)
+    run_queries(folder, use_arrow_dtype=use_arrow_dtype)
 
 
 if __name__ == "__main__":
