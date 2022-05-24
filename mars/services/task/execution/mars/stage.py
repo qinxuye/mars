@@ -58,9 +58,13 @@ class TaskStageProcessor:
         self._meta_api = meta_api
 
         # gen subtask_id to subtask
-        self.subtask_id_to_subtask = {
-            subtask.subtask_id: subtask for subtask in subtask_graph
-        }
+        self.subtask_id_to_subtask: Dict[str, Subtask] = dict()
+        self._subtask_to_unfinished_inputs_size: Dict[Subtask, int] = dict()
+        for subtask in subtask_graph:
+            self.subtask_id_to_subtask[subtask.subtask_id] = subtask
+            self._subtask_to_unfinished_inputs_size[
+                subtask
+            ] = subtask_graph.count_predecessors(subtask)
         self._subtask_to_bands: Dict[Subtask, BandType] = dict()
         self.subtask_snapshots: Dict[Subtask, SubtaskResult] = dict()
         self.subtask_results: Dict[Subtask, SubtaskResult] = dict()
@@ -210,11 +214,8 @@ class TaskStageProcessor:
             for succ_subtask in self.subtask_graph.successors(subtask):
                 if succ_subtask in self.subtask_results:  # pragma: no cover
                     continue
-                pred_subtasks = self.subtask_graph.predecessors(succ_subtask)
-                if all(
-                    pred_subtask in self.subtask_results
-                    for pred_subtask in pred_subtasks
-                ):
+                self._subtask_to_unfinished_inputs_size[succ_subtask] -= 1
+                if self._subtask_to_unfinished_inputs_size[succ_subtask] <= 0:
                     # all predecessors finished
                     to_schedule_subtasks.append(succ_subtask)
             await self._schedule_subtasks(to_schedule_subtasks)

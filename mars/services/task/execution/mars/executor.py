@@ -291,8 +291,8 @@ class MarsTaskExecutor(TaskExecutor):
                 # Since every worker will call supervisor to set subtask result,
                 # we need to release actor lock to make `decref_chunks` parallel to avoid blocking
                 # other `set_subtask_result` calls.
-                # If speculative execution enabled, concurrent subtasks may got error since input chunks may
-                # got deleted. But it's OK because the current subtask run has succeed.
+                # If speculative execution enabled, concurrent subtasks may get error since input chunks may
+                # get deleted. But it's OK because the current subtask run has succeeded.
                 if subtask.subtask_id not in stage_processor.decref_subtask:
                     stage_processor.decref_subtask.add(subtask.subtask_id)
                     await self._decref_input_subtasks(
@@ -365,7 +365,10 @@ class MarsTaskExecutor(TaskExecutor):
             [t.key for t in self._lifecycle_processed_tileables]
         )
 
-    async def _incref_stage(self, stage_processor: "TaskStageProcessor"):
+    @classmethod
+    def _get_stage_incref_chunk_counts(
+        cls, stage_processor: "TaskStageProcessor"
+    ) -> Dict[str, int]:
         subtask_graph = stage_processor.subtask_graph
         incref_chunk_key_to_counts = defaultdict(lambda: 0)
         for subtask in subtask_graph:
@@ -383,6 +386,12 @@ class MarsTaskExecutor(TaskExecutor):
         result_chunks = stage_processor.chunk_graph.result_chunks
         for c in result_chunks:
             incref_chunk_key_to_counts[c.key] += 1
+        return incref_chunk_key_to_counts
+
+    async def _incref_stage(self, stage_processor: "TaskStageProcessor"):
+        incref_chunk_key_to_counts = await asyncio.to_thread(
+            self._get_stage_incref_chunk_counts, stage_processor
+        )
         logger.debug(
             "Incref chunks for stage %s: %s",
             stage_processor.stage_id,
@@ -418,8 +427,8 @@ class MarsTaskExecutor(TaskExecutor):
 
     @mo.extensible
     async def _decref_stage(self, stage_processor: "TaskStageProcessor"):
-        decref_chunk_key_to_counts = self._get_decref_stage_chunk_key_to_counts(
-            stage_processor
+        decref_chunk_key_to_counts = await asyncio.to_thread(
+            self._get_decref_stage_chunk_key_to_counts, stage_processor
         )
         logger.debug(
             "Decref chunks when stage %s finish: %s",
@@ -431,8 +440,9 @@ class MarsTaskExecutor(TaskExecutor):
             counts=list(decref_chunk_key_to_counts.values()),
         )
 
-    @_decref_stage.batch
-    async def _decref_stage(self, args_list, kwargs_list):
+    def _batch_get_decref_stage_chunk_key_to_counts(
+        self, args_list, kwargs_list
+    ) -> Dict[str, int]:
         decref_chunk_key_to_counts = defaultdict(lambda: 0)
         for args, kwargs in zip(args_list, kwargs_list):
             chunk_key_to_counts = self._get_decref_stage_chunk_key_to_counts(
@@ -440,22 +450,23 @@ class MarsTaskExecutor(TaskExecutor):
             )
             for k, c in chunk_key_to_counts.items():
                 decref_chunk_key_to_counts[k] += c
+        return decref_chunk_key_to_counts
+
+    @_decref_stage.batch
+    async def _decref_stage(self, args_list, kwargs_list):
+        decref_chunk_key_to_counts = await asyncio.to_thread(
+            self._batch_get_decref_stage_chunk_key_to_counts, args_list, kwargs_list
+        )
         logger.debug("Decref chunks when stages finish: %s", decref_chunk_key_to_counts)
         await self._lifecycle_api.decref_chunks(
             list(decref_chunk_key_to_counts),
             counts=list(decref_chunk_key_to_counts.values()),
         )
 
-    async def _decref_input_subtasks(
-        self, subtask: Subtask, subtask_graph: SubtaskGraph
-    ):
-        # make sure subtasks are decreffed only once
-        if subtask.subtask_id not in self._subtask_decref_events:
-            self._subtask_decref_events[subtask.subtask_id] = asyncio.Event()
-        else:  # pragma: no cover
-            await self._subtask_decref_events[subtask.subtask_id].wait()
-            return
-
+    @classmethod
+    def _get_decref_chunk_counts(
+        cls, subtask: Subtask, subtask_graph: SubtaskGraph
+    ) -> Dict[str, int]:
         decref_chunk_key_to_counts = defaultdict(lambda: 0)
         for in_subtask in subtask_graph.iter_predecessors(subtask):
             for result_chunk in in_subtask.chunk_graph.results:
@@ -465,6 +476,21 @@ class MarsTaskExecutor(TaskExecutor):
                     for inp in result_chunk.inputs:
                         decref_chunk_key_to_counts[inp.key] += n_reducer
                 decref_chunk_key_to_counts[result_chunk.key] += 1
+        return decref_chunk_key_to_counts
+
+    async def _decref_input_subtasks(
+        self, subtask: Subtask, subtask_graph: SubtaskGraph
+    ):
+        # make sure subtasks are decref-ed only once
+        if subtask.subtask_id not in self._subtask_decref_events:
+            self._subtask_decref_events[subtask.subtask_id] = asyncio.Event()
+        else:  # pragma: no cover
+            await self._subtask_decref_events[subtask.subtask_id].wait()
+            return
+
+        decref_chunk_key_to_counts = await asyncio.to_thread(
+            self._get_decref_chunk_counts, subtask, subtask_graph
+        )
         logger.debug(
             "Decref chunks %s when subtask %s finish",
             decref_chunk_key_to_counts,

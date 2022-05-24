@@ -328,7 +328,7 @@ def q05(lineitem, orders, customer, nation, region, supplier):
     jn1 = fregion.merge(nation, left_on="R_REGIONKEY", right_on="N_REGIONKEY")
     jn2 = jn1.merge(customer, left_on="N_NATIONKEY", right_on="C_NATIONKEY")
     jn3 = jn2.merge(forders, left_on="C_CUSTKEY", right_on="O_CUSTKEY")
-    jn4 = jn3.merge(lineitem, left_on="O_ORDERKEY", right_on="L_ORDERKEY")
+    jn4 = jn3.merge(lineitem, left_on="O_ORDERKEY", right_on="L_ORDERKEY", method='broadcast')
     jn5 = supplier.merge(
         jn4, left_on=["S_SUPPKEY", "S_NATIONKEY"], right_on=["L_SUPPKEY", "N_NATIONKEY"]
     )
@@ -998,7 +998,9 @@ def run_queries(data_folder: str, select: List[str] = None):
     supplier = load_supplier(data_folder)
     part = load_part(data_folder)
     partsupp = load_partsupp(data_folder)
-    mars.execute([lineitem, orders, customer, nation, region, supplier, part, partsupp])
+    # mars.execute([lineitem, orders, customer, nation, region, supplier, part, partsupp])
+    mars.execute([orders, customer, nation, region, supplier, part, partsupp])
+    lineitem.execute()
     print("Reading time (s): ", time.time() - t1)
 
     q01(lineitem)
