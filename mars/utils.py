@@ -209,6 +209,12 @@ def parse_readable_size(value: Union[str, int, float]) -> Tuple[float, bool]:
 
 
 def readable_size(size: int, trunc: bool = False) -> str:
+    """
+
+    Returns
+    -------
+    object
+    """
     if size < 1024:
         ret_size = size
         size_unit = ""
