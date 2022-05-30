@@ -60,6 +60,13 @@ class SenderManagerActor(mo.StatelessActor):
             address=address, uid=ReceiverManagerActor.gen_uid(band_name)
         )
 
+    async def _open_readers(self, level: StorageLevel, data_infos: List[DataInfo]):
+        open_reader_tasks = []
+        storage_client = await self._storage_handler.get_client(level)
+        for info in data_infos:
+            open_reader_tasks.append(storage_client.open_reader(info.object_id))
+        return await asyncio.gather(*open_reader_tasks)
+
     async def _send_data(
         self,
         receiver_ref: mo.ActorRefType["ReceiverManagerActor"],
@@ -93,11 +100,7 @@ class SenderManagerActor(mo.StatelessActor):
                     await self.flush()
 
         sender = BufferedSender()
-        open_reader_tasks = []
-        storage_client = await self._storage_handler.get_client(level)
-        for info in data_infos:
-            open_reader_tasks.append(storage_client.open_reader(info.object_id))
-        readers = await asyncio.gather(*open_reader_tasks)
+        readers = await self._open_readers(level, data_infos)
 
         for data_key, reader in zip(data_keys, readers):
             while True:
@@ -290,13 +293,23 @@ class ReceiverManagerActor(mo.StatelessActor):
             del self._writing_infos[(session_id, data_key)]
 
     async def put_small_objects(
-        self, session_id: str, data_keys: List[str], objects: List, level: StorageLevel
+        self, session_id: str, data_keys: List[str], objects: Tuple, level: StorageLevel
     ):
-        tasks = [
-            self._storage_handler.put.delay(session_id, data_key, obj, level)
-            for data_key, obj in zip(data_keys, objects)
-        ]
-        await self._storage_handler.put.batch(*tasks)
+        open_writers = []
+        for data_key, data in zip(data_keys, objects):
+            open_writers.append(
+                self._storage_handler.open_writer.delay(
+                    session_id, data_key, len(data), level, request_quota=False
+                )
+            )
+        writers = await self._storage_handler.open_writer.batch(*open_writers)
+        writes = []
+        for writer, data in zip(writers, objects):
+            async def write_data(w, d):
+                await w.write(d)
+                await w.close()
+            writes.append(write_data(writer, data))
+        await asyncio.gather(*writes)
 
     async def create_writers(
         self,
