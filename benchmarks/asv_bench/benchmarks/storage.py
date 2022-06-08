@@ -129,7 +129,7 @@ class TransferPackageSuite:
 if __name__ == "__main__":
     suite = TransferPackageSuite()
     suite.setup()
-    print('- Bench 1 to 1 -')
+    print("- Bench 1 to 1 -")
     print(suite.time_1_to_1())
     print("- Bench 1 to 1 with small objects -")
     print(suite.time_1_to_1_small_objects())
